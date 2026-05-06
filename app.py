@@ -189,6 +189,8 @@ def ask_groq(query: str, context: str) -> str:
     is_spec   = any(w in query.lower() for w in spec_keywords)
     is_manual = any(w in query.lower() for w in manual_keywords)
 
+    context = context[:2000]
+    
     if is_spec:
         prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
 Based on the technical specification records below, answer the query accurately.
