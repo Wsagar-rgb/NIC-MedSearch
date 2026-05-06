@@ -141,6 +141,23 @@ def load_models():
 
 embedder, qdrant, groq_client = load_models()
 
+# Load and test connection
+try:
+    embedder, qdrant, groq_client = load_models()
+    test = qdrant.get_collections()
+    st.sidebar.success(f"Qdrant OK ✅")
+    
+    # Test Groq
+    test_groq = groq_client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=[{"role": "user", "content": "say ok"}],
+        max_tokens=5,
+    )
+    st.sidebar.success("Groq OK ✅")
+except Exception as e:
+    st.sidebar.error(f"Error: {str(e)}")
+    st.stop()
+
 
 # ── Core functions ────────────────────────────────────────────
 def search_similar(query: str, top_k: int, doc_filter: str) -> list:
@@ -190,7 +207,7 @@ def ask_groq(query: str, context: str) -> str:
     is_manual = any(w in query.lower() for w in manual_keywords)
 
     context = context[:2000]
-    
+
     if is_spec:
         prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
 Based on the technical specification records below, answer the query accurately.
