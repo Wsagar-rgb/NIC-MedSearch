@@ -227,11 +227,18 @@ hr { border-color: #1e2d4a !important; }
 # ── Load models (cached) ──────────────────────────────────────
 @st.cache_resource
 def load_models():
-    embedder = SentenceTransformer(EMBEDDING_MODEL)
-    client = QdrantClient(url=QDRANT_URL)
-    return embedder, client
-
-embedder, qdrant = load_models()
+    try:
+        embedder = SentenceTransformer(EMBEDDING_MODEL)
+        qdrant   = QdrantClient(
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+            timeout=30
+        )
+        groq     = Groq(api_key=GROQ_API_KEY)
+        return embedder, qdrant, groq
+    except Exception as e:
+        st.error(f"Connection error: {e}")
+        st.stop()
 
 
 # ── Core functions ────────────────────────────────────────────
