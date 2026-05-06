@@ -229,9 +229,11 @@ hr { border-color: #1e2d4a !important; }
 def load_models():
     try:
         embedder = SentenceTransformer(EMBEDDING_MODEL)
-        qdrant   = QdrantClient(
+        qdrant = QdrantClient(
             url=QDRANT_URL,
             api_key=QDRANT_API_KEY,
+            port=443,
+            https=True,
             timeout=30
         )
         groq     = Groq(api_key=GROQ_API_KEY)
