@@ -149,7 +149,7 @@ try:
     
     # Test Groq
     test_groq = groq_client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": "say ok"}],
         max_tokens=5,
     )
