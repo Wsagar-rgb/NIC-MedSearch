@@ -1,0 +1,12 @@
+2026-05-04T16:03:21.209420 | stream1_csv | accepted=0 rejected=675 source=C:\Projects\NIC_MedSearch\raw\hospital1.csv
+2026-05-04T16:03:21.663514 | stream1_csv | accepted=0 rejected=1562 source=C:\Projects\NIC_MedSearch\raw\hospital2.csv
+2026-05-04T16:03:21.954036 | stream1_csv | accepted=0 rejected=858 source=C:\Projects\NIC_MedSearch\raw\hospital3.csv
+2026-05-04T16:17:38.377393 | stream1_csv | accepted=355 rejected=320 source=C:\Projects\NIC_MedSearch\raw\repair_records_1.csv
+2026-05-04T16:17:38.890152 | stream1_csv | accepted=0 rejected=1562 source=C:\Projects\NIC_MedSearch\raw\repair_records_2.csv
+2026-05-04T16:17:39.165720 | stream1_csv | accepted=0 rejected=858 source=C:\Projects\NIC_MedSearch\raw\repair_records_3.csv
+2026-05-05T10:55:30.819889 | hospital=1 | accepted=617 rejected=58 source=C:\Projects\NIC_MedSearch\raw\repair_records_1.csv
+2026-05-05T10:55:31.422851 | hospital=2 | accepted=840 rejected=18 source=C:\Projects\NIC_MedSearch\raw\repair_records_2.csv
+2026-05-05T10:55:32.375084 | hospital=3 | accepted=1461 rejected=101 source=C:\Projects\NIC_MedSearch\raw\repair_records_3.csv
+2026-05-05T15:30:25.816427 | hospital=1 | accepted=617 rejected=58 source=C:\Projects\NIC_MedSearch\raw\repair_records_1.csv
+2026-05-05T15:30:26.960853 | hospital=2 | accepted=840 rejected=18 source=C:\Projects\NIC_MedSearch\raw\repair_records_2.csv
+2026-05-05T15:30:28.480343 | hospital=3 | accepted=1461 rejected=101 source=C:\Projects\NIC_MedSearch\raw\repair_records_3.csv

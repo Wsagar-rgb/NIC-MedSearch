@@ -1,0 +1,40 @@
+INFO: ============================================================
+INFO: STREAM 2 — Technical Manuals (PDF)
+INFO: ============================================================
+INFO: Found 4 PDF file(s)
+INFO: 
+Processing: -BeneHeart-R12-Service-Manual-English-2-0.pdf
+INFO:   → Digital PDF detected
+INFO:   → 241 sections extracted
+INFO: 
+Processing: 391241500-Regius-Sigma-II-Service-Manual-English-pdf.pdf
+INFO:   → Scanned PDF detected — running OCR
+ERROR: Error OCR-ing scanned PDF C:\Projects\NIC_MedSearch\manuals\391241500-Regius-Sigma-II-Service-Manual-English-pdf.pdf: Unable to get page count. Is poppler installed and in PATH?
+WARNING:   No text extracted from 391241500-Regius-Sigma-II-Service-Manual-English-pdf.pdf — skipping
+INFO: 
+Processing: Drager Fabius GS Technical Service Manual Rev 3 (1).pdf
+INFO:   → Digital PDF detected
+INFO:   → 31 sections extracted
+INFO: 
+Processing: Drager_Primus_Anaesthetic_Workstation_Rev._6.0_Technical_Documentation.pdf (1).pdf
+INFO:   → Digital PDF detected
+INFO:   → 29 sections extracted
+INFO: 
+INFO: ────────────────────────────────────────
+INFO: ✓ Processed : 3 PDFs
+INFO: ✗ Rejected  : 1 PDFs (no text)
+INFO:   Sections  : 301 → C:\Projects\NIC_MedSearch\processed\manuals.jsonl
+INFO: ────────────────────────────────────────
+INFO: 
+Stream 2 complete.
+INFO: ============================================================
+INFO: STREAM 3 — Technical Specifications (.docx / .pdf)
+INFO: ============================================================
+INFO: Found 20 specification file(s)
+INFO: 
+INFO: ────────────────────────────────────────
+INFO: ✓ Accepted: 21 chunks → C:\Projects\NIC_MedSearch\processed\technical_specs.jsonl
+INFO: ✗ Rejected: 19 → C:\Projects\NIC_MedSearch\processed\technical_specs_rejected.csv
+INFO: ────────────────────────────────────────
+INFO: 
+Stream 3 complete.

@@ -1,0 +1,11 @@
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+logs/
+processed/
+raw/
+manuals/
+technical_specification/
+ingested/
+*.csv
+*.jsonl
