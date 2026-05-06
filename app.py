@@ -174,12 +174,11 @@ def build_context(results: list) -> str:
         p = r.payload
         parts.append(f"""
 Record {i+1} (Similarity: {r.score:.2%}):
-  Equipment  : {p.get('equipment_name', 'N/A')}
-  Source     : {p.get('source_file', 'N/A')}
-  Problem    : {p.get('fault_description', 'N/A')}
-  Diagnosis  : {p.get('initial_diagnosis', 'N/A')}
-  Work Done  : {p.get('action_taken', 'N/A')}
-  Content    : {str(p.get('content', ''))[:300]}
+  Equipment : {p.get('equipment_name', 'N/A')}
+  Source    : {p.get('source_file', 'N/A')}
+  Problem   : {str(p.get('fault_description', ''))[:100]}
+  Work Done : {str(p.get('action_taken', ''))[:100]}
+  Content   : {str(p.get('content', ''))[:150]}
 """)
     return "\n".join(parts)
 
@@ -232,7 +231,7 @@ Be concise and practical."""
     response = groq_client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=1024,
+        max_tokens=512,
         temperature=0.3,
     )
     return response.choices[0].message.content
