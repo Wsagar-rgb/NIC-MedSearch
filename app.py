@@ -127,7 +127,7 @@ QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
 GROQ_API_KEY   = st.secrets["GROQ_API_KEY"]
 COLLECTION_NAME = "nic_medsearch"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-LLM_MODEL       = "llama3-8b-8192"
+LLM_MODEL       = "llama3-70b-8192"
 TOP_K           = 5
 
 
