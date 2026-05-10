@@ -117,7 +117,7 @@ USER_AGENTS = [
 ]
 
 def _get_headers(idx: int = 0) -> dict:
-    return {
+    headers = {
         "User-Agent": USER_AGENTS[idx % len(USER_AGENTS)],
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
@@ -125,7 +125,12 @@ def _get_headers(idx: int = 0) -> dict:
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        # This is the most important line for fixing 417 error
+        "Expect": "",   # Explicitly disable Expect: 100-continue
     }
+    return headers
 
 
 # ── Load models ───────────────────────────────────────────────
@@ -221,33 +226,34 @@ def _duckduckgo_site_search(site: str, query: str, label: str, ua_idx: int = 0) 
 
 
 def _scrape_medwrench_directly(query: str) -> list[dict]:
-    """Direct scrape MedWrench with improved selectors."""
+    """Direct scrape MedWrench with 417 fix."""
     results = []
     try:
         encoded = urllib.parse.quote_plus(query.strip())
         url = f"https://www.medwrench.com/equipment/search?keywords={encoded}"
         
-        resp = requests.get(url, headers=_get_headers(2), timeout=12)
+        # Use a fresh session for this request
+        session = requests.Session()
+        resp = session.get(url, headers=_get_headers(2), timeout=15)
         resp.raise_for_status()
+        
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Broader and more flexible selectors
-        items = soup.select("div.equipment-item, div.listing-item, div.search-result, .col-md-4, .col-sm-6, article")
+        items = soup.select("div.equipment-item, div.listing-item, div.search-result, .col-md-4, .col-sm-6, article, .card")
 
-        for item in items[:6]:
+        for item in items[:8]:
             link = item.find("a", href=True)
-            if not link:
+            if not link or not link.get_text(strip=True):
                 continue
                 
             title = _clean_text(link.get_text(), 120)
             href = link["href"]
             full_url = href if href.startswith("http") else "https://www.medwrench.com" + href
 
-            # Get description from any text content
             text_content = item.get_text(separator=" ", strip=True)
             snippet = _clean_text(text_content, 250)
 
-            if title and len(title) > 4 and "medwrench.com" in full_url:
+            if title and len(title) > 4 and "medwrench.com" in full_url.lower():
                 results.append({
                     "title": title,
                     "snippet": snippet,
@@ -255,7 +261,7 @@ def _scrape_medwrench_directly(query: str) -> list[dict]:
                     "source": "MedWrench",
                 })
     except Exception as e:
-        st.warning(f"🌐 MedWrench direct scrape failed: {str(e)[:80]}")
+        st.warning(f"🌐 MedWrench direct scrape failed: {str(e)[:100]}")
     
     return results[:5]
 
