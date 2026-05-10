@@ -164,68 +164,48 @@ def _clean_text(text: str, max_len: int = 300) -> str:
 
 
 def _duckduckgo_site_search(site: str, query: str, label: str, ua_idx: int = 0) -> list[dict]:
-    """
-    Search a specific site using DuckDuckGo HTML endpoint.
-    DDG does not block bots the way Google does, making it
-    reliable on cloud-hosted servers like Streamlit Cloud.
-    """
     results = []
     try:
-        clean_query = query.strip()
-        ddg_query   = f"site:{site} {clean_query}"
-        encoded     = urllib.parse.quote_plus(ddg_query)
-
-        # DuckDuckGo HTML (non-JS) endpoint
-        url  = f"https://html.duckduckgo.com/html/?q={encoded}"
-        resp = requests.post(
+        ddg_query = f"site:{site} {query.strip()}"
+        resp = requests.get(
             "https://html.duckduckgo.com/html/",
-            data={"q": ddg_query, "b": "", "kl": "us-en"},
+            params={"q": ddg_query},
             headers=_get_headers(ua_idx),
-            timeout=12,
+            timeout=15,
         )
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # DDG HTML result structure
-        for result in soup.select(".result__body, .results_links, .result")[:8]:
-            title_tag   = result.select_one(".result__title, .result__a, a.result__url")
-            link_tag    = result.select_one("a.result__url, a[href]")
-            snippet_tag = result.select_one(".result__snippet")
+        # More robust selectors (DDG changes often)
+        for result in soup.select(".result, .web-result, .result__body")[:8]:
+            title = result.select_one("h2 a, .result__a, .result__title")
+            link = result.select_one("a[href]")
+            snippet = result.select_one(".result__snippet, .result-snippet")
 
-            if not title_tag:
+            if not title or not link:
                 continue
 
-            title = _clean_text(title_tag.get_text(), 120)
-            href  = ""
-            if link_tag:
-                href = link_tag.get("href", "")
-                # DDG wraps URLs — extract real URL from uddg= param
-                if "uddg=" in href:
-                    try:
-                        href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
-                    except Exception:
-                        pass
-                elif href.startswith("//"):
-                    href = "https:" + href
+            title_text = _clean_text(title.get_text(), 120)
+            href = link.get("href", "")
 
-            snippet = _clean_text(snippet_tag.get_text(), 300) if snippet_tag else ""
+            # Extract real URL
+            if "uddg=" in href:
+                try:
+                    href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+                except:
+                    continue
 
-            # Only keep results actually from the target site
-            if site in href and title and len(title) > 4:
-                results.append({
-                    "title":   title,
-                    "snippet": snippet,
-                    "url":     href,
-                    "source":  label,
-                })
+            if site not in href:
+                continue
 
+            results.append({
+                "title": title_text,
+                "snippet": _clean_text(snippet.get_text(), 300) if snippet else "",
+                "url": href,
+                "source": label,
+            })
     except Exception as e:
-        results.append({
-            "title":   f"{label} search error",
-            "snippet": str(e),
-            "url":     "",
-            "source":  label,
-        })
+        st.sidebar.error(f"DDG {label} failed: {e}")  # temporary
 
     return results[:5]
 
