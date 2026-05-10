@@ -109,15 +109,23 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 LLM_MODEL       = "llama-3.3-70b-versatile"
 TOP_K           = 5
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
+# Rotate User-Agents to reduce bot detection
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+]
+
+def _get_headers(idx: int = 0) -> dict:
+    return {
+        "User-Agent": USER_AGENTS[idx % len(USER_AGENTS)],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
 
 
 # ── Load models ───────────────────────────────────────────────
@@ -147,6 +155,7 @@ except Exception as e:
 
 # ══════════════════════════════════════════════════════════════
 # WEB SCRAPING — MedWrench & EBME
+# Uses DuckDuckGo HTML search (no API key, no bot blocking)
 # ══════════════════════════════════════════════════════════════
 
 def _clean_text(text: str, max_len: int = 300) -> str:
@@ -154,123 +163,171 @@ def _clean_text(text: str, max_len: int = 300) -> str:
     return text[:max_len] + "…" if len(text) > max_len else text
 
 
-def _google_site_search(site: str, query: str, label: str) -> list[dict]:
+def _duckduckgo_site_search(site: str, query: str, label: str, ua_idx: int = 0) -> list[dict]:
     """
-    Generic Google site: search scraper.
-    Falls back gracefully if Google blocks or returns nothing.
+    Search a specific site using DuckDuckGo HTML endpoint.
+    DDG does not block bots the way Google does, making it
+    reliable on cloud-hosted servers like Streamlit Cloud.
     """
     results = []
     try:
-        encoded    = urllib.parse.quote_plus(query.strip())
-        search_url = f"https://www.google.com/search?q=site:{site}+{encoded}&hl=en&num=8"
-        resp       = requests.get(search_url, headers=HEADERS, timeout=12)
+        clean_query = query.strip()
+        ddg_query   = f"site:{site} {clean_query}"
+        encoded     = urllib.parse.quote_plus(ddg_query)
+
+        # DuckDuckGo HTML (non-JS) endpoint
+        url  = f"https://html.duckduckgo.com/html/?q={encoded}"
+        resp = requests.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": ddg_query, "b": "", "kl": "us-en"},
+            headers=_get_headers(ua_idx),
+            timeout=12,
+        )
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        for g in soup.select("div.g, div[data-hveid]")[:8]:
-            title_tag   = g.select_one("h3")
-            link_tag    = g.select_one("a[href]")
-            snippet_tag = g.select_one("div.VwiC3b, span.aCOpRe, div[style='-webkit-line-clamp:2']")
+        # DDG HTML result structure
+        for result in soup.select(".result__body, .results_links, .result")[:8]:
+            title_tag   = result.select_one(".result__title, .result__a, a.result__url")
+            link_tag    = result.select_one("a.result__url, a[href]")
+            snippet_tag = result.select_one(".result__snippet")
 
-            if not title_tag or not link_tag:
+            if not title_tag:
                 continue
 
-            title   = _clean_text(title_tag.get_text(), 120)
-            href    = link_tag.get("href", "")
+            title = _clean_text(title_tag.get_text(), 120)
+            href  = ""
+            if link_tag:
+                href = link_tag.get("href", "")
+                # DDG wraps URLs — extract real URL from uddg= param
+                if "uddg=" in href:
+                    try:
+                        href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+                    except Exception:
+                        pass
+                elif href.startswith("//"):
+                    href = "https:" + href
+
             snippet = _clean_text(snippet_tag.get_text(), 300) if snippet_tag else ""
 
-            # Only keep links that actually go to the target site
-            if site in href and title and len(title) > 5:
+            # Only keep results actually from the target site
+            if site in href and title and len(title) > 4:
                 results.append({
                     "title":   title,
                     "snippet": snippet,
                     "url":     href,
                     "source":  label,
                 })
+
     except Exception as e:
         results.append({
-            "title":   f"{label} lookup failed",
+            "title":   f"{label} search error",
             "snippet": str(e),
             "url":     "",
             "source":  label,
         })
+
+    return results[:5]
+
+
+def _scrape_ebme_directly(query: str) -> list[dict]:
+    """
+    Scrape EBME's own WordPress search page directly.
+    EBME is a smaller site and generally allows scraping.
+    """
+    results = []
+    try:
+        encoded    = urllib.parse.quote_plus(query.strip())
+        search_url = f"https://www.ebme.co.uk/?s={encoded}"
+        resp       = requests.get(search_url, headers=_get_headers(1), timeout=12)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # WordPress search results — articles or post titles
+        articles = soup.select("article, .post, h2.entry-title, h1.entry-title")
+        for art in articles[:6]:
+            link = art.find("a", href=True)
+            if not link:
+                continue
+            title    = _clean_text(link.get_text(), 120)
+            href     = link["href"]
+            full_url = href if href.startswith("http") else "https://www.ebme.co.uk" + href
+            excerpt  = art.find(class_=re.compile(r"excerpt|summary|entry-summary|description", re.I))
+            snippet  = _clean_text(excerpt.get_text() if excerpt else art.get_text())
+            if title and len(title) > 5 and "ebme.co.uk" in full_url:
+                results.append({
+                    "title":   title,
+                    "snippet": snippet,
+                    "url":     full_url,
+                    "source":  "EBME",
+                })
+    except Exception:
+        pass
+    return results[:5]
+
+
+def _scrape_medwrench_directly(query: str) -> list[dict]:
+    """
+    Scrape MedWrench equipment search directly.
+    Tries the equipment listing search which is publicly accessible.
+    """
+    results = []
+    try:
+        encoded = urllib.parse.quote_plus(query.strip())
+        url     = f"https://www.medwrench.com/equipment/search?keywords={encoded}"
+        resp    = requests.get(url, headers=_get_headers(2), timeout=12)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Equipment cards / listing items
+        items = (
+            soup.select(".equipment-item, .equipment-card, .listing-item, .search-result-item")
+            or soup.select("div.col-md-4, div.col-sm-6")
+        )
+        for item in items[:6]:
+            link = item.find("a", href=True)
+            if not link:
+                continue
+            title    = _clean_text(link.get_text(), 120)
+            href     = link["href"]
+            full_url = href if href.startswith("http") else "https://www.medwrench.com" + href
+            desc_tag = item.find(class_=re.compile(r"desc|model|manufacturer|info", re.I))
+            snippet  = _clean_text(desc_tag.get_text() if desc_tag else item.get_text())
+            if title and len(title) > 4:
+                results.append({
+                    "title":   title,
+                    "snippet": snippet,
+                    "url":     full_url,
+                    "source":  "MedWrench",
+                })
+    except Exception:
+        pass
     return results[:5]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_medwrench(query: str) -> list[dict]:
     """
-    Search MedWrench via Google site: search.
-    MedWrench's own /bulletin/search endpoint returns 404 — Google is the reliable path.
-    Also tries MedWrench's equipment search as a direct fallback.
+    Search MedWrench using DuckDuckGo site search (primary)
+    + direct MedWrench equipment search (fallback).
     """
     query   = query.strip()
-    results = _google_site_search("medwrench.com", query, "MedWrench")
-
-    # Direct fallback: MedWrench equipment/search page
+    results = _duckduckgo_site_search("medwrench.com", query, "MedWrench", ua_idx=0)
     if not results:
-        try:
-            encoded = urllib.parse.quote_plus(query)
-            url     = f"https://www.medwrench.com/equipment/search?keywords={encoded}"
-            resp    = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for a in soup.find_all("a", href=True)[:8]:
-                    href = a["href"]
-                    text = a.get_text(strip=True)
-                    if len(text) > 10 and ("/equipment/" in href or "/bulletin/" in href):
-                        full_url = href if href.startswith("http") else "https://www.medwrench.com" + href
-                        parent   = a.find_parent()
-                        snippet  = _clean_text(parent.get_text() if parent else "")
-                        results.append({
-                            "title":   text[:120],
-                            "snippet": snippet,
-                            "url":     full_url,
-                            "source":  "MedWrench",
-                        })
-        except Exception:
-            pass
-
+        results = _scrape_medwrench_directly(query)
     return results[:5]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_ebme(query: str) -> list[dict]:
     """
-    Search EBME via Google site: search first,
-    then fall back to EBME's own WordPress search (?s=).
+    Search EBME using DuckDuckGo site search (primary)
+    + direct EBME WordPress search (fallback).
     """
     query   = query.strip()
-    results = _google_site_search("ebme.co.uk", query, "EBME")
-
-    # Direct fallback: EBME WordPress search
+    results = _duckduckgo_site_search("ebme.co.uk", query, "EBME", ua_idx=1)
     if not results:
-        try:
-            encoded    = urllib.parse.quote_plus(query)
-            search_url = f"https://www.ebme.co.uk/?s={encoded}"
-            resp       = requests.get(search_url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200:
-                soup  = BeautifulSoup(resp.text, "html.parser")
-                items = soup.select("article, .post, h2.entry-title")
-                for item in items[:5]:
-                    link = item.find("a", href=True) if item.name != "a" else item
-                    if not link:
-                        continue
-                    title    = _clean_text(link.get_text(), 120)
-                    href     = link["href"]
-                    full_url = href if href.startswith("http") else "https://www.ebme.co.uk" + href
-                    excerpt  = item.find(class_=re.compile(r"excerpt|summary|entry-summary", re.I))
-                    snippet  = _clean_text(excerpt.get_text() if excerpt else item.get_text())
-                    if title and len(title) > 5:
-                        results.append({
-                            "title":   title,
-                            "snippet": snippet,
-                            "url":     full_url,
-                            "source":  "EBME",
-                        })
-        except Exception:
-            pass
-
+        results = _scrape_ebme_directly(query)
     return results[:5]
 
 
@@ -279,7 +336,7 @@ def fetch_page_detail(url: str, max_chars: int = 800) -> str:
     if not url:
         return ""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=8)
+        resp = requests.get(url, headers=_get_headers(), timeout=8)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -297,6 +354,8 @@ def fetch_page_detail(url: str, max_chars: int = 800) -> str:
 
 def is_web_result_relevant(query: str, result: dict) -> bool:
     """Check keyword overlap between query and result title/snippet."""
+    if result.get("title", "").endswith("search error") or result.get("title", "").endswith("lookup failed"):
+        return False
     q_words  = set(re.findall(r'\w{4,}', query.lower()))
     combined = (result.get("title", "") + " " + result.get("snippet", "")).lower()
     r_words  = set(re.findall(r'\w{4,}', combined))
@@ -317,7 +376,6 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
         search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="technical_spec_table"))])
     elif doc_filter == "Manuals Only":
         search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))])
-
     return qdrant.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
