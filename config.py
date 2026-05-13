@@ -23,10 +23,10 @@ SPEC_REJECT_CSV   = PROCESSED_DIR / "technical_specs_rejected.csv"
 # ── Qdrant / RAG ──────────────────────────────────────────────
 QDRANT_URL      = "http://localhost:6333"
 COLLECTION_NAME = "nic_medsearch"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "allenai/scibert_scivocab_uncased"
 LLM_MODEL       = "llama3.2:3b"
 TOP_K           = 5
-BATCH_SIZE      = 50
+BATCH_SIZE      = 5
 
 # ── Column mapping (handles all 3 CSV variants) ───────────────
 # Strip trailing spaces from headers before matching

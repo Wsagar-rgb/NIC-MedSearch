@@ -33,6 +33,7 @@ log.info(f"Connecting to Qdrant Cloud at {QDRANT_CLOUD_URL}")
 client = QdrantClient(
     url=QDRANT_CLOUD_URL,
     api_key=QDRANT_CLOUD_KEY,
+    timeout=120,
 )
 
 # ── Recreate collection ───────────────────────────────────────
