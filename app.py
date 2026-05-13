@@ -97,14 +97,14 @@ TOP_K           = 5
 
 
 # ── Load models ───────────────────────────────────────────────
-@st.cache_resource
-def load_models():
+@st.cache_resource(show_spinner="Loading SciBERT & connections…")
+def load_models(cache_version=2):   # ← bump this number whenever you change the model
     embedder = SentenceTransformer(EMBEDDING_MODEL)
     qdrant   = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
     groq     = Groq(api_key=GROQ_API_KEY)
     return embedder, qdrant, groq
 
-embedder, qdrant, groq_client = load_models()
+embedder, qdrant, groq_client = load_models(cache_version=2)
 
 try:
     qdrant.get_collections()
