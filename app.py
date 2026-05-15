@@ -17,37 +17,68 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS ────────────────────────────────────────────────
+# ── Custom CSS (light theme) ──────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 * { font-family: 'IBM Plex Sans', sans-serif; }
-.stApp { background-color: #0a0e1a; color: #e2e8f0; }
-section[data-testid="stSidebar"] { background-color: #0f1525; border-right: 1px solid #1e2d4a; }
+
+/* ── App background & text ── */
+.stApp { background-color: #f8fafc; color: #1e293b; }
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background-color: #f1f5f9;
+    border-right: 1px solid #e2e8f0;
+}
+section[data-testid="stSidebar"] * { color: #1e293b !important; }
+
+/* ── Header card ── */
 .main-header {
-    background: linear-gradient(135deg, #0f1525 0%, #1a2744 100%);
-    border: 1px solid #1e3a5f; border-radius: 12px;
-    padding: 2rem 2.5rem; margin-bottom: 2rem;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 2rem 2.5rem;
+    margin-bottom: 2rem;
     position: relative; overflow: hidden;
 }
 .main-header::before {
     content: ''; position: absolute; top: -50%; right: -10%;
     width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(0,120,255,0.08) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(59,130,246,0.07) 0%, transparent 70%);
 }
-.main-header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 2rem; font-weight: 600; color: #60a5fa; margin: 0; }
+.main-header h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 2rem; font-weight: 600;
+    color: #1d4ed8; margin: 0;
+}
 .main-header p { color: #64748b; margin: 0.5rem 0 0 0; font-size: 0.9rem; }
+
+/* ── Badges ── */
 .badge {
-    display: inline-block; background: rgba(96,165,250,0.1);
-    border: 1px solid rgba(96,165,250,0.3); color: #60a5fa;
-    padding: 2px 10px; border-radius: 20px; font-size: 0.75rem;
-    font-family: 'IBM Plex Mono', monospace; margin-right: 6px;
+    display: inline-block;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.25);
+    color: #1d4ed8;
+    padding: 2px 10px; border-radius: 20px;
+    font-size: 0.75rem;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-right: 6px;
 }
+
+/* ── Text area ── */
 .stTextArea textarea {
-    background-color: #0f1525 !important; border: 1px solid #1e3a5f !important;
-    border-radius: 8px !important; color: #e2e8f0 !important;
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    color: #1e293b !important;
 }
-.stTextArea textarea:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.2) !important; }
+.stTextArea textarea:focus {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.15) !important;
+}
+
+/* ── Search button ── */
 .stButton > button {
     background: linear-gradient(135deg, #1d4ed8, #2563eb) !important;
     color: white !important; border: none !important;
@@ -56,31 +87,52 @@ section[data-testid="stSidebar"] { background-color: #0f1525; border-right: 1px 
 }
 .stButton > button:hover {
     background: linear-gradient(135deg, #2563eb, #3b82f6) !important;
-    transform: translateY(-1px) !important; box-shadow: 0 4px 15px rgba(59,130,246,0.3) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 15px rgba(59,130,246,0.25) !important;
 }
+
+/* ── Result cards ── */
 .result-card {
-    background: #0f1525; border: 1px solid #1e2d4a;
-    border-radius: 10px; padding: 1.2rem 1.5rem; margin-bottom: 1rem;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 .result-card.repair { border-left: 3px solid #f59e0b; }
 .result-card.manual { border-left: 3px solid #8b5cf6; }
-.result-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; }
-.result-equipment { font-size: 1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 0.4rem; }
-.result-content { font-size: 0.85rem; color: #64748b; line-height: 1.5; }
+.result-title  { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: #64748b; margin-bottom: 0.5rem; }
+.result-equipment { font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 0.4rem; }
+.result-content { font-size: 0.85rem; color: #475569; line-height: 1.5; }
+
+/* ── Score badges ── */
 .score-badge { float: right; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
-.score-high { background: rgba(16,185,129,0.15); color: #10b981; }
-.score-mid  { background: rgba(245,158,11,0.15);  color: #f59e0b; }
-.score-low  { background: rgba(100,116,139,0.15); color: #64748b; }
+.score-high { background: rgba(16,185,129,0.12); color: #059669; }
+.score-mid  { background: rgba(245,158,11,0.12);  color: #d97706; }
+.score-low  { background: rgba(100,116,139,0.12); color: #475569; }
+
+/* ── AI response box ── */
 .ai-response {
-    background: linear-gradient(135deg, #0f1525, #111827);
-    border: 1px solid #1e3a5f; border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     padding: 1.5rem; margin-top: 1rem;
-    font-size: 0.9rem; line-height: 1.8; color: #cbd5e1; white-space: pre-wrap;
+    font-size: 0.9rem; line-height: 1.8;
+    color: #1e293b; white-space: pre-wrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
-.metric-box { background: #0f1525; border: 1px solid #1e2d4a; border-radius: 8px; padding: 1rem; text-align: center; }
-.metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.8rem; font-weight: 600; color: #60a5fa; }
+
+/* ── Metric box ── */
+.metric-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 1rem; text-align: center;
+}
+.metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.8rem; font-weight: 600; color: #1d4ed8; }
 .metric-label { font-size: 0.75rem; color: #64748b; margin-top: 0.2rem; }
-hr { border-color: #1e2d4a !important; }
+
+hr { border-color: #e2e8f0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -133,9 +185,11 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
     if doc_filter == "Repair Records Only":
         search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))])
     elif doc_filter == "Manuals Only":
-        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))])
+        search_filter = Filter(must=[
+            FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))
+        ])
 
-    # Keyword pre-filter for short specific queries
+    # Keyword pre-filter for short specific queries (only when no doc_filter active)
     if search_filter is None and len(query.strip().split()) <= 6:
         try:
             keyword_filter = Filter(
@@ -146,20 +200,24 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
                 query=query_vector,
                 query_filter=keyword_filter,
                 limit=top_k,
-                with_payload=True
+                with_payload=True,
             ).points
             if results:
                 return results
         except Exception:
             pass  # Fall through to pure vector search
 
-    return qdrant.query_points(
+    # ── Main search — only pass query_filter when it is not None ──
+    kwargs = dict(
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=top_k,
         with_payload=True,
-        query_filter=search_filter
-    ).points
+    )
+    if search_filter is not None:
+        kwargs["query_filter"] = search_filter
+
+    return qdrant.query_points(**kwargs).points
 
 
 def filter_by_score(results: list) -> list:
@@ -246,7 +304,7 @@ def get_card_class(doc_type):
 with st.sidebar:
     st.markdown("""
     <div style='padding:1rem 0'>
-        <div style='font-family:IBM Plex Mono,monospace;font-size:1.1rem;color:#60a5fa;font-weight:600;'>NIC MedSearch</div>
+        <div style='font-family:IBM Plex Mono,monospace;font-size:1.1rem;color:#1d4ed8;font-weight:600;'>NIC MedSearch</div>
         <div style='color:#64748b;font-size:0.8rem;margin-top:4px;'>Medical Equipment IR System</div>
     </div>
     """, unsafe_allow_html=True)
@@ -370,7 +428,7 @@ if search_clicked and query.strip():
 
                 st.markdown(f"""
                 <div class='ai-response'>
-                    <div style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#3b82f6;margin-bottom:0.5rem;'>
+                    <div style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#1d4ed8;margin-bottom:0.5rem;'>
                         ⚡ {LLM_MODEL} via Groq
                     </div>
                     <div style='margin-bottom:1rem;'><span class='badge'>Local KB</span></div>
@@ -392,7 +450,7 @@ elif search_clicked:
 
 st.markdown("---")
 st.markdown("""
-<div style='text-align:center;color:#334155;font-size:0.8rem;font-family:IBM Plex Mono,monospace;'>
+<div style='text-align:center;color:#94a3b8;font-size:0.8rem;font-family:IBM Plex Mono,monospace;'>
     NIC MedSearch · Qdrant Cloud + Groq · Always On · Free
 </div>
 """, unsafe_allow_html=True)
