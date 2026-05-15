@@ -195,13 +195,13 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
             keyword_filter = Filter(
                 must=[FieldCondition(key="content", match=MatchText(text=query.strip()))]
             )
-            results = qdrant.query_points(
+            results = qdrant.search(
                 collection_name=COLLECTION_NAME,
-                query=query_vector,
+                query_vector=query_vector,
                 query_filter=keyword_filter,
                 limit=top_k,
                 with_payload=True,
-            ).points
+            )
             if results:
                 return results
         except Exception:
@@ -210,14 +210,14 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
     # ── Main search — only pass query_filter when it is not None ──
     kwargs = dict(
         collection_name=COLLECTION_NAME,
-        query=query_vector,
+        query_vector=query_vector,
         limit=top_k,
         with_payload=True,
     )
     if search_filter is not None:
         kwargs["query_filter"] = search_filter
 
-    return qdrant.query_points(**kwargs).points
+    return qdrant.search(**kwargs)
 
 
 def filter_by_score(results: list) -> list:
