@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
 # app.py — NIC MedSearch Streamlit UI (Cloud Version)
-# RAG-only: Qdrant Cloud + Groq LLM (web scraping removed)
+# RAG-only: Qdrant Cloud + Groq LLM
 # Usage: streamlit run app.py
 # ─────────────────────────────────────────────────────────────
 
@@ -63,7 +63,6 @@ section[data-testid="stSidebar"] { background-color: #0f1525; border-right: 1px 
     border-radius: 10px; padding: 1.2rem 1.5rem; margin-bottom: 1rem;
 }
 .result-card.repair { border-left: 3px solid #f59e0b; }
-.result-card.spec   { border-left: 3px solid #10b981; }
 .result-card.manual { border-left: 3px solid #8b5cf6; }
 .result-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; }
 .result-equipment { font-size: 1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 0.4rem; }
@@ -91,20 +90,21 @@ QDRANT_URL      = st.secrets["QDRANT_URL"]
 QDRANT_API_KEY  = st.secrets["QDRANT_API_KEY"]
 GROQ_API_KEY    = st.secrets["GROQ_API_KEY"]
 COLLECTION_NAME = "nic_medsearch"
-EMBEDDING_MODEL = "allenai/scibert_scivocab_uncased"
+EMBEDDING_MODEL = "multi-qa-mpnet-base-dot-v1"   # ← updated; must match embed_and_index.py
 LLM_MODEL       = "llama-3.3-70b-versatile"
 TOP_K           = 5
+SCORE_THRESHOLD = 0.82
 
 
 # ── Load models ───────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading SciBERT & connections…")
-def load_models(cache_version=2):   # ← bump this number whenever you change the model
+@st.cache_resource(show_spinner="Loading embedding model & connections…")
+def load_models(cache_version=3):   # bumped to 3 to force reload of new model
     embedder = SentenceTransformer(EMBEDDING_MODEL)
     qdrant   = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
     groq     = Groq(api_key=GROQ_API_KEY)
     return embedder, qdrant, groq
 
-embedder, qdrant, groq_client = load_models(cache_version=2)
+embedder, qdrant, groq_client = load_models(cache_version=3)
 
 try:
     qdrant.get_collections()
@@ -125,15 +125,34 @@ except Exception as e:
 # ══════════════════════════════════════════════════════════════
 
 def search_similar(query: str, top_k: int, doc_filter: str) -> list:
-    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchText
+
     query_vector  = embedder.encode(query.strip()).tolist()
     search_filter = None
+
     if doc_filter == "Repair Records Only":
         search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))])
-    elif doc_filter == "Tech Specs Only":
-        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="technical_spec_table"))])
     elif doc_filter == "Manuals Only":
         search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))])
+
+    # Keyword pre-filter for short specific queries (≤6 words), with vector fallback
+    if search_filter is None and len(query.strip().split()) <= 6:
+        try:
+            keyword_filter = Filter(
+                must=[FieldCondition(key="content", match=MatchText(text=query.strip()))]
+            )
+            results = qdrant.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector,
+                query_filter=keyword_filter,
+                limit=top_k,
+                with_payload=True
+            ).points
+            if results:
+                return results
+        except Exception:
+            pass  # Fall through to pure vector search
+
     return qdrant.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
@@ -141,6 +160,12 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
         with_payload=True,
         query_filter=search_filter
     ).points
+
+
+def filter_by_score(results: list) -> list:
+    """Drop results below score threshold; return top 3 as fallback."""
+    filtered = [r for r in results if r.score >= SCORE_THRESHOLD]
+    return filtered if filtered else results[:3]
 
 
 def build_context(results: list) -> str:
@@ -159,35 +184,29 @@ Record {i+1} (Similarity: {r.score:.2%}):
 
 
 def ask_groq(query: str, local_context: str) -> str:
-    spec_keywords   = ["specification", "spec", "technical", "requirement", "quantity", "install"]
-    manual_keywords = ["manual", "service", "procedure", "how to", "steps"]
-    is_spec   = any(w in query.lower() for w in spec_keywords)
+    manual_keywords = ["manual", "service", "procedure", "how to", "steps",
+                       "removing", "replace", "install", "disassemble", "repair"]
     is_manual = any(w in query.lower() for w in manual_keywords)
 
     combined = local_context[:2400]
 
-    if is_spec:
-        prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
-Use the local records below to answer accurately.
+    if is_manual:
+        prompt = f"""You are a medical equipment technical expert.
+You have been given sections retrieved from official service manuals and technical documentation.
 
-RETRIEVED RECORDS:
+RETRIEVED MANUAL SECTIONS:
 {combined}
 
 QUERY: {query}
 
-Summarize key specs: equipment name, location, quantity, priority, technical requirements.
-Be specific and factual."""
+Using ONLY the information from the manual sections above, provide:
+1. What the manual says about this topic
+2. Step-by-step procedure or explanation as described in the manual
+3. Any warnings, notes or calibration steps mentioned
+4. Parts or tools referenced in the manual
 
-    elif is_manual:
-        prompt = f"""You are a medical equipment service expert for hospitals in Nepal.
-Use the local records below.
-
-RETRIEVED RECORDS:
-{combined}
-
-QUERY: {query}
-
-Give clear step-by-step guidance."""
+If the sections do not contain enough information, say so clearly.
+Do not generate answers from general knowledge."""
 
     else:
         prompt = f"""You are a medical equipment maintenance expert for hospitals in Nepal.
@@ -210,19 +229,18 @@ Be concise and practical."""
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=700,
-        temperature=0.3,
+        temperature=0.1,
     )
     return response.choices[0].message.content
 
 
 def get_score_class(score):
-    if score >= 0.6: return "score-high"
-    if score >= 0.4: return "score-mid"
+    if score >= 0.82: return "score-high"
+    if score >= 0.70: return "score-mid"
     return "score-low"
 
 def get_card_class(doc_type):
     if "repair" in doc_type: return "repair"
-    if "spec"   in doc_type: return "spec"
     return "manual"
 
 
@@ -239,7 +257,7 @@ with st.sidebar:
     st.markdown("**⚙️ Search Settings**")
     top_k      = st.slider("Number of results", 3, 10, 5)
     doc_filter = st.selectbox("Filter by source",
-        ["All Sources", "Repair Records Only", "Tech Specs Only", "Manuals Only"])
+        ["All Sources", "Repair Records Only", "Manuals Only"])
     enable_ai  = st.toggle("🤖 Enable AI Response", value=True)
 
     st.markdown("---")
@@ -261,10 +279,10 @@ with st.sidebar:
     st.markdown("**💡 Example Queries**")
     examples = [
         "microscope lens not clear",
-        "ultrasound OBGY specification",
         "ventilator leak test failed",
         "ECG machine service procedure",
         "defibrillator not charging",
+        "removing the keyboard table T2",
     ]
     for ex in examples:
         if st.button(ex, key=ex):
@@ -290,7 +308,7 @@ with col1:
         "Query",
         value=st.session_state.get("query", ""),
         height=100,
-        placeholder="e.g. 'microscope not showing clear image' or 'ultrasound OBGY technical specification'",
+        placeholder="e.g. 'microscope not showing clear image' or 'removing the keyboard table T2'",
         label_visibility="collapsed"
     )
 with col2:
@@ -301,15 +319,20 @@ with col2:
 if search_clicked and query.strip():
 
     with st.spinner("Searching knowledge base…"):
-        results = search_similar(query, top_k, doc_filter)
+        raw_results = search_similar(query, top_k, doc_filter)
+        results     = filter_by_score(raw_results)
 
     if not results:
         st.warning("No results found. Try a different query.")
     else:
+        dropped = len(raw_results) - len(results)
+        if dropped:
+            st.caption(f"ℹ️ {dropped} low-confidence result(s) filtered out (below {SCORE_THRESHOLD:.0%} threshold).")
+
         col_results, col_ai = st.columns([1, 1])
 
         with col_results:
-            st.markdown(f"**📋 Top {len(results)} Local Records**")
+            st.markdown(f"**📋 Top {len(results)} Records**")
             st.markdown("---")
             for r in results:
                 p        = r.payload
@@ -322,14 +345,9 @@ if search_clicked and query.strip():
                     main_text   = p.get('equipment_name', 'N/A')
                     detail      = f"Problem: {str(p.get('fault_description',''))[:120]}"
                     detail2     = f"Work Done: {str(p.get('action_taken',''))[:120]}"
-                elif "spec" in doc_type:
-                    icon, title = "📄", f"TECH SPEC — {p.get('source_file','N/A')}"
-                    main_text   = str(p.get('source_file','')).replace('.docx','').replace('.pdf','')
-                    detail      = str(p.get('content',''))[:200]
-                    detail2     = ""
                 else:
                     icon, title = "📘", f"MANUAL — {p.get('source_file','N/A')}"
-                    main_text   = p.get('title','Manual Section')
+                    main_text   = p.get('title', 'Manual Section')
                     detail      = str(p.get('content',''))[:200]
                     detail2     = ""
 
