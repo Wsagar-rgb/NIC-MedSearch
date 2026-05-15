@@ -176,10 +176,10 @@ except Exception as e:
 # CORE RAG FUNCTIONS
 # ══════════════════════════════════════════════════════════════
 
-def search_similar(query: str, top_k: int, doc_filter: str) -> list:
+def search_similar(query: str, top_k: int, doc_filter: str, _qdrant, _embedder) -> list:
     from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchText
 
-    query_vector  = embedder.encode(query.strip()).tolist()
+    query_vector  = _embedder.encode(query.strip()).tolist()
     search_filter = None
 
     if doc_filter == "Repair Records Only":
@@ -195,7 +195,7 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
             keyword_filter = Filter(
                 must=[FieldCondition(key="content", match=MatchText(text=query.strip()))]
             )
-            results = qdrant.search(
+            results = _qdrant.search(
                 collection_name=COLLECTION_NAME,
                 query_vector=query_vector,
                 query_filter=keyword_filter,
@@ -217,7 +217,7 @@ def search_similar(query: str, top_k: int, doc_filter: str) -> list:
     if search_filter is not None:
         kwargs["query_filter"] = search_filter
 
-    return qdrant.search(**kwargs)
+    return _qdrant.search(**kwargs)
 
 
 def filter_by_score(results: list) -> list:
@@ -375,7 +375,7 @@ with col2:
 if search_clicked and query.strip():
 
     with st.spinner("Searching knowledge base…"):
-        raw_results = search_similar(query, top_k, doc_filter)
+        raw_results = search_similar(query, top_k, doc_filter, qdrant, embedder)
         results     = filter_by_score(raw_results)
 
     if not results:
