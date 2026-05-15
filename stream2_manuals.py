@@ -1,6 +1,10 @@
 # ─────────────────────────────────────────────────────────────
 # stream2_manuals.py — Technical Manuals PDF Processor
 # Usage: python stream2_manuals.py
+# Changes:
+#   - Broader HEADING_PATTERN: catches numbered, ALL CAPS, Title Case headings
+#   - Added SKIP_PATTERNS for noise pages (cover, copyright, TOC)
+#   - MIN_SECTION_WORDS guard to drop tiny chunks
 # ─────────────────────────────────────────────────────────────
 
 import re
@@ -41,8 +45,30 @@ PAGE_NOISE_PATTERNS = [
     re.compile(r'^[\s\d]+$', re.MULTILINE),
 ]
 
+# ── Noise pages to skip entirely (cover, copyright, TOC) ──────
+SKIP_PATTERNS = [
+    "all rights reserved",
+    "copyright reserved",
+    "because you care",
+    "table of contents",
+    "printed on",
+]
+
+# ── Minimum words for a section to be kept ────────────────────
+MIN_SECTION_WORDS = 30
+
+# ── Heading detection ─────────────────────────────────────────
+# Catches three heading styles:
+#   1. Numbered    : "7.6 REMOVING THE KEYBOARD" / "4.2.1 Calibration"
+#   2. ALL CAPS    : "SYSTEM CALIBRATION" / "APPENDIX A"
+#   3. Title Case  : "Removing the Paper Transport Motor"
 HEADING_PATTERN = re.compile(
-    r'^(\d+\.\d*\.?\s+.*|APPENDIX\s+[A-Z]+\s+.*)',
+    r'^('
+    r'\d+[\d\.]*\s+[A-Z][^\n]{2,70}'          # numbered headings
+    r'|APPENDIX\s+[A-Z]+\s+.*'                 # appendix headings
+    r'|[A-Z][A-Z\s\(\)\/\-]{4,70}'            # ALL CAPS headings
+    r'|[A-Z][a-z]+(?:\s+[A-Z]?[a-z]*){1,8}'  # Title Case headings
+    r')',
     re.MULTILINE
 )
 
@@ -58,6 +84,17 @@ def clean_page_text(text: str) -> str:
             continue
         cleaned.append(line)
     return '\n'.join(cleaned).strip()
+
+
+def is_noise_page(text: str) -> bool:
+    """Returns True if page is a cover, copyright, or TOC page to skip."""
+    text_lower = text.lower()
+    word_count = len(text.split())
+    if word_count < MIN_SECTION_WORDS:
+        return True
+    if sum(1 for p in SKIP_PATTERNS if p in text_lower) >= 2:
+        return True
+    return False
 
 
 def is_digital_pdf(pdf_path: str) -> bool:
@@ -77,7 +114,7 @@ def is_digital_pdf(pdf_path: str) -> bool:
 
 
 def extract_text_from_digital_pdf(pdf_path: str) -> List[str]:
-    """Extract text page-by-page from a digital PDF."""
+    """Extract text page-by-page from a digital PDF, skipping noise pages."""
     text_pages = []
     try:
         doc = fitz.open(pdf_path)
@@ -87,7 +124,7 @@ def extract_text_from_digital_pdf(pdf_path: str) -> List[str]:
             page = doc.load_page(page_num)
             text = page.get_text("text")
             cleaned = clean_page_text(text)
-            if cleaned:
+            if cleaned and not is_noise_page(cleaned):
                 text_pages.append(cleaned)
         doc.close()
     except Exception as e:
@@ -105,6 +142,8 @@ def extract_text_from_scanned_pdf(pdf_path: str) -> List[str]:
                         leave=False):
             text = pytesseract.image_to_string(img, lang='eng')
             cleaned = clean_page_text(text)
+            if not cleaned or is_noise_page(cleaned):
+                continue
             words = cleaned.split()
             corrected = [
                 spell.correction(w) if spell.correction(w) is not None else w
@@ -122,15 +161,16 @@ def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
     """
     Splits text pages into sections by heading pattern,
     then sub-chunks sections that are too long (>500 words).
+    Drops sections shorter than MIN_SECTION_WORDS.
     """
     sections = []
-    current_title = "Introduction"
+    current_title   = "Introduction"
     current_content = []
     section_counter = [0]
 
     def save_section():
         full = "\n".join(current_content).strip()
-        if full:
+        if full and len(full.split()) >= MIN_SECTION_WORDS:
             sections.append({
                 "id"          : f"MANUAL-{section_counter[0]:05d}",
                 "doc_type"    : "manual_section",
@@ -143,16 +183,16 @@ def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
 
     for page_text in text_pages:
         for line in page_text.split('\n'):
-            match = HEADING_PATTERN.match(line)
+            match = HEADING_PATTERN.match(line.strip())
             if match and len(line.strip()) < 80:
                 save_section()
-                current_title = match.group(0).strip()
+                current_title   = match.group(0).strip()
                 current_content = [line]
             else:
                 current_content.append(line)
     save_section()
 
-    # Sub-chunk large sections
+    # Sub-chunk large sections (>500 words) into ~200 word chunks
     final = []
     for sec in sections:
         if len(sec['content'].split()) > 500:
@@ -162,7 +202,7 @@ def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
                 buf.append(chunk)
                 if len(' '.join(buf).split()) > 200:
                     sub_text = ' '.join(buf).strip()
-                    if sub_text:
+                    if sub_text and len(sub_text.split()) >= MIN_SECTION_WORDS:
                         final.append({
                             "id"          : f"{sec['id']}_sub{len(final)}",
                             "doc_type"    : "manual_sub_section",
@@ -174,7 +214,7 @@ def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
                     buf = []
             if buf:
                 sub_text = ' '.join(buf).strip()
-                if sub_text:
+                if sub_text and len(sub_text.split()) >= MIN_SECTION_WORDS:
                     final.append({
                         "id"          : f"{sec['id']}_sub{len(final)}",
                         "doc_type"    : "manual_sub_section",
@@ -199,7 +239,7 @@ def run_stream2(manuals_dir: Path, output_jsonl: Path):
         return
 
     log.info(f"Found {len(pdf_files)} PDF file(s)")
-    all_sections = []
+    all_sections   = []
     rejected_count = 0
 
     for pdf_path in pdf_files:
@@ -218,7 +258,7 @@ def run_stream2(manuals_dir: Path, output_jsonl: Path):
 
         sections = extract_sections(pages, str(pdf_path))
         all_sections.extend(sections)
-        log.info(f"  → {len(sections)} sections extracted")
+        log.info(f"  → {len(sections)} sections extracted from {pdf_path.name}")
 
     with open(output_jsonl, "w", encoding="utf-8") as f:
         for sec in all_sections:

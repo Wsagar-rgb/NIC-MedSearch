@@ -8,7 +8,6 @@ from pathlib import Path
 BASE_DIR      = Path(__file__).parent.resolve()
 RAW_CSV_DIR   = BASE_DIR / "raw"
 MANUALS_DIR   = BASE_DIR / "manuals"
-TECH_SPEC_DIR = BASE_DIR / "technical_specification"
 PROCESSED_DIR = BASE_DIR / "processed"
 INGESTED_DIR  = BASE_DIR / "ingested"
 LOGS_DIR      = BASE_DIR / "logs"
@@ -17,19 +16,16 @@ REPAIR_JSONL      = PROCESSED_DIR / "repair_records.jsonl"
 REPAIR_REJECT_CSV = PROCESSED_DIR / "repair_records_rejected.csv"
 INGEST_LOG        = INGESTED_DIR  / "ingest_log.txt"
 MANUAL_JSONL      = PROCESSED_DIR / "manuals.jsonl"
-SPEC_JSONL        = PROCESSED_DIR / "technical_specs.jsonl"
-SPEC_REJECT_CSV   = PROCESSED_DIR / "technical_specs_rejected.csv"
 
 # ── Qdrant / RAG ──────────────────────────────────────────────
 QDRANT_URL      = "http://localhost:6333"
 COLLECTION_NAME = "nic_medsearch"
-EMBEDDING_MODEL = "allenai/scibert_scivocab_uncased"
+EMBEDDING_MODEL = "multi-qa-mpnet-base-dot-v1"
 LLM_MODEL       = "llama3.2:3b"
 TOP_K           = 5
-BATCH_SIZE      = 5
+BATCH_SIZE      = 64
 
 # ── Column mapping (handles all 3 CSV variants) ───────────────
-# Strip trailing spaces from headers before matching
 COLUMN_MAP = {
     "Equipment Description" : "equipment_name",
     "Manufacturer"          : "manufacturer",
@@ -62,8 +58,7 @@ ABBREVIATIONS = {
     r"\bn/a\b"    : "",
 }
 
-for d in [RAW_CSV_DIR, MANUALS_DIR, TECH_SPEC_DIR,
-          PROCESSED_DIR, INGESTED_DIR, LOGS_DIR]:
+for d in [RAW_CSV_DIR, MANUALS_DIR, PROCESSED_DIR, INGESTED_DIR, LOGS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 def get_csv_paths():
