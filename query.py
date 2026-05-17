@@ -167,12 +167,19 @@ RETRIEVED MANUAL SECTIONS:
 
 QUERY: {query}
 
+IMPORTANT — How to judge relevance:
+- Judge relevance by the CONTENT of each section, NOT by the PDF filename.
+- A section is relevant if its content describes the device or procedure in the query,
+  even if the PDF filename belongs to a different product line.
+- Example: a section about "Sony RGB printer setup" inside an Esaote PDF is still
+  valid for a query about Sony printer configuration — use it.
+
 Instructions:
-- Use ONLY the manual sections above. Do not draw on general knowledge.
-- If sections are from a different device, clearly state that first.
-- Provide complete numbered, step-by-step instructions as described in the manual.
+- Use any section whose CONTENT is relevant to the query.
+- Provide complete numbered step-by-step instructions exactly as written in the manual.
 - Include all warnings, safety notes, tools, and parts mentioned.
-- If not covered, say exactly: "The retrieved manual sections do not contain this procedure."
+- If you use a section from a multi-device manual, note which device that section applies to.
+- Only say "not found" if NO section content addresses the query at all.
 - State your confidence: HIGH / MEDIUM / LOW"""
 
     elif doc_filter == "Repair Records Only":
