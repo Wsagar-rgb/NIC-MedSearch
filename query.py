@@ -146,7 +146,7 @@ def build_context(results: list) -> str:
     return "\n".join(parts)
 
 
-def ask_llm(query: str, context: str) -> str:
+def ask_llm(query: str, context: str, doc_filter: str = "All Sources") -> str:
     spec_keywords   = ["specification", "spec", "technical", "requirement",
                        "quantity", "install", "voltage", "power", "weight",
                        "dimension", "frequency"]
@@ -157,9 +157,46 @@ def ask_llm(query: str, context: str) -> str:
     is_spec_query   = any(w in query.lower() for w in spec_keywords)
     is_manual_query = any(w in query.lower() for w in manual_keywords)
 
-    if is_spec_query:
+    # Source-aware prompt: filter takes priority over keyword detection
+    if doc_filter == "Manuals Only":
+        prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
+You are answering based STRICTLY on service manual sections. No repair records are available.
+
+RETRIEVED MANUAL SECTIONS:
+{context}
+
+QUERY: {query}
+
+Instructions:
+- Use ONLY the manual sections above. Do not draw on general knowledge.
+- If sections are from a different device, clearly state that first.
+- Provide complete numbered, step-by-step instructions as described in the manual.
+- Include all warnings, safety notes, tools, and parts mentioned.
+- If not covered, say exactly: "The retrieved manual sections do not contain this procedure."
+- State your confidence: HIGH / MEDIUM / LOW"""
+
+    elif doc_filter == "Repair Records Only":
+        prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
+You are answering based STRICTLY on past repair records. No manual sections are available.
+
+PAST REPAIR RECORDS:
+{context}
+
+CURRENT PROBLEM: {query}
+
+Provide a structured response:
+1. Most similar past cases and what resolved them (reference specific records)
+2. Most likely root cause based on the repair evidence
+3. Recommended step-by-step action based on past fixes
+4. Parts or tools likely needed
+5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
+
+If records are for a different device, note that clearly before giving advice.
+If no records are relevant, say so instead of guessing."""
+
+    elif is_spec_query:
         prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
-Based ONLY on the technical specification records below, answer the query accurately.
+Based ONLY on the records below, answer the specification query accurately.
 
 RETRIEVED RECORDS:
 {context}
@@ -174,39 +211,39 @@ Instructions:
 
     elif is_manual_query:
         prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
-Based ONLY on the manual sections retrieved below, answer the query.
+Based ONLY on the sources retrieved below, answer the query.
 
-RETRIEVED MANUAL SECTIONS:
+RETRIEVED SOURCES:
 {context}
 
 QUERY: {query}
 
 Instructions:
-- Use ONLY information from the sections above.
-- If sections are from a different device, clearly state that first.
-- Provide numbered, step-by-step instructions where applicable.
-- Mention tools, parts, or safety precautions from the sections.
-- If not covered, say: "The retrieved sections do not contain this procedure."
+- Use ONLY information from the sources above.
+- If a source is from a different device, clearly state that first.
+- Provide complete numbered, step-by-step instructions where applicable.
+- Include tools, parts, or safety precautions mentioned.
+- If not covered, say: "The retrieved sources do not contain this procedure."
 - State your confidence: HIGH / MEDIUM / LOW"""
 
     else:
         prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
-Use the past repair records below to diagnose and resolve this problem.
+Use both manual sections and past repair records below to diagnose and resolve this problem.
 
-PAST REPAIR RECORDS:
+RETRIEVED SOURCES (manuals + repair records):
 {context}
 
 CURRENT PROBLEM: {query}
 
 Provide a structured response:
-1. Most similar past cases and what resolved them
+1. Most similar past cases and relevant manual guidance
 2. Most likely root cause based on the evidence
 3. Recommended step-by-step action
 4. Parts or tools likely needed
 5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
 
-If records are for a different device, note that clearly.
-If records are not relevant, say so instead of guessing."""
+If sources are for a different device, note that clearly.
+If sources are not relevant, say so instead of guessing."""
 
     response = ollama.chat(
         model=LLM_MODEL,
@@ -215,7 +252,7 @@ If records are not relevant, say so instead of guessing."""
     return response["message"]["content"]
 
 
-def search_and_answer(query: str):
+def search_and_answer(query: str, doc_filter: str = "All Sources"):
     print(f"\n{'='*60}")
     print(f"QUERY: {query}")
     print(f"{'='*60}")
@@ -249,7 +286,7 @@ def search_and_answer(query: str):
 
     print("🤖 Generating AI recommendation …\n")
     context = build_context(results)
-    answer  = ask_llm(query, context)
+    answer  = ask_llm(query, context, doc_filter=doc_filter)
 
     print("─" * 60)
     print("AI RECOMMENDATION:")
@@ -285,7 +322,11 @@ if __name__ == "__main__":
                 break
             if not query:
                 continue
-            search_and_answer(query)
+            print("Filter: [1] All Sources  [2] Manuals Only  [3] Repair Records Only")
+            f_input = input("Select filter (Enter for All): ").strip()
+            f_map   = {"1": "All Sources", "2": "Manuals Only", "3": "Repair Records Only"}
+            doc_filter = f_map.get(f_input, "All Sources")
+            search_and_answer(query, doc_filter=doc_filter)
         except KeyboardInterrupt:
             print("\nGoodbye!")
             break

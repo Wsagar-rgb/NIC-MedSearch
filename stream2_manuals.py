@@ -192,15 +192,17 @@ def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
                 current_content.append(line)
     save_section()
 
-    # Sub-chunk large sections (>500 words) into ~200 word chunks
+    # Sub-chunk large sections (>800 words) into ~400 word chunks
+    # Threshold raised: 500→800 so step-by-step procedures stay intact
+    # Chunk size raised: 200→400 so procedures are not split mid-step
     final = []
     for sec in sections:
-        if len(sec['content'].split()) > 500:
+        if len(sec['content'].split()) > 800:
             chunks = sec['content'].split('\n\n')
             buf = []
             for chunk in chunks:
                 buf.append(chunk)
-                if len(' '.join(buf).split()) > 200:
+                if len(' '.join(buf).split()) > 400:
                     sub_text = ' '.join(buf).strip()
                     if sub_text and len(sub_text.split()) >= MIN_SECTION_WORDS:
                         final.append({

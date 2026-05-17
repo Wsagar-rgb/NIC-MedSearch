@@ -214,7 +214,7 @@ def build_context(results: list) -> str:
     return "\n".join(parts)
 
 
-def ask_groq(query: str, context: str) -> str:
+def ask_groq(query: str, context: str, doc_filter: str = "All Sources") -> str:
     spec_keywords   = ["specification", "spec", "technical", "requirement",
                        "voltage", "power", "weight", "dimension", "frequency",
                        "quantity", "install"]
@@ -225,9 +225,50 @@ def ask_groq(query: str, context: str) -> str:
     is_spec_query   = any(w in query.lower() for w in spec_keywords)
     is_manual_query = any(w in query.lower() for w in manual_keywords)
 
-    if is_spec_query:
+    # ── Source-aware prompt selection ──────────────────────────
+    # If user selected a filter, enforce that source type in the prompt.
+    # If "All Sources", fall back to query-keyword detection.
+
+    if doc_filter == "Manuals Only":
+        prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
+You are answering based STRICTLY on service manual sections. No repair records are available.
+
+RETRIEVED MANUAL SECTIONS:
+{context}
+
+QUERY: {query}
+
+Instructions:
+- Use ONLY the manual sections above. Do not draw on general knowledge.
+- If sections are from a different device than asked about, clearly state that first.
+- Provide complete numbered, step-by-step instructions exactly as described in the manual.
+- Include all warnings, safety notes, tools, and parts mentioned in the sections.
+- If the sections do not cover this query, say exactly:
+  "The retrieved manual sections do not contain this procedure. Please consult the full service manual."
+- State your confidence: HIGH / MEDIUM / LOW"""
+
+    elif doc_filter == "Repair Records Only":
+        prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
+You are answering based STRICTLY on past repair records. No manual sections are available.
+
+PAST REPAIR RECORDS:
+{context}
+
+CURRENT PROBLEM: {query}
+
+Provide a structured response:
+1. Most similar past cases and what resolved them (reference specific records)
+2. Most likely root cause based on the repair evidence
+3. Recommended step-by-step action based on past fixes
+4. Parts or tools likely needed
+5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
+
+If records are for a different device, note that clearly before giving advice.
+If no records are relevant, say so instead of guessing."""
+
+    elif is_spec_query:
         prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
-Based ONLY on the technical specification records below, answer the query accurately.
+Based ONLY on the records below (manuals and repair records), answer the specification query.
 
 RETRIEVED RECORDS:
 {context}
@@ -242,39 +283,39 @@ Instructions:
 
     elif is_manual_query:
         prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
-Based ONLY on the manual sections retrieved below, answer the query.
+Based ONLY on the sources retrieved below (manuals and repair records), answer the query.
 
-RETRIEVED MANUAL SECTIONS:
+RETRIEVED SOURCES:
 {context}
 
 QUERY: {query}
 
 Instructions:
-- Use ONLY information from the sections above.
-- If sections are from a different device, clearly state that first.
-- Provide numbered, step-by-step instructions where applicable.
-- Mention tools, parts, or safety precautions from the sections.
-- If not covered, say: "The retrieved sections do not contain this procedure."
+- Use ONLY information from the sources above.
+- If a source is from a different device than asked about, clearly state that first.
+- Provide complete numbered, step-by-step instructions where applicable.
+- Include tools, parts, or safety precautions mentioned in the sources.
+- If not covered, say: "The retrieved sources do not contain this procedure."
 - State your confidence: HIGH / MEDIUM / LOW"""
 
     else:
         prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
-Use the past repair records below to diagnose and resolve this problem.
+Use both manual sections and past repair records below to diagnose and resolve this problem.
 
-PAST REPAIR RECORDS:
+RETRIEVED SOURCES (manuals + repair records):
 {context}
 
 CURRENT PROBLEM: {query}
 
 Provide a structured response:
-1. Most similar past cases and what resolved them
+1. Most similar past cases and relevant manual guidance
 2. Most likely root cause based on the evidence
 3. Recommended step-by-step action
 4. Parts or tools likely needed
 5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
 
-If records are for a different device, note that clearly.
-If records are not relevant, say so instead of guessing."""
+If sources are for a different device, note that clearly.
+If sources are not relevant, say so instead of guessing."""
 
     response = groq_client.chat.completions.create(
         model=LLM_MODEL,
@@ -416,7 +457,7 @@ if search_clicked and query.strip():
                 st.markdown("---")
                 with st.spinner("Generating response…"):
                     context = build_context(results)
-                    answer  = ask_groq(query, context)
+                    answer  = ask_groq(query, context, doc_filter)
 
                 st.markdown(f"""
                 <div class='ai-response'>
