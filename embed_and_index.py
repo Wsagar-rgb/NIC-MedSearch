@@ -3,7 +3,7 @@
 # OPTIMIZED:
 #   - BGE model (faster + more accurate than mpnet)
 #   - Embedding cache (skip re-encoding unchanged records)
-#   - Parallel encoding with num_workers
+#   - MiniLM-L6-v2 model (5x faster than BGE/mpnet on CPU)
 #   - Larger upload batches (fewer HTTP round-trips)
 #   - Fixed build_embed_text (no redundant field duplication)
 # Usage: python embed_and_index.py
@@ -32,12 +32,15 @@ log = logging.getLogger(__name__)
 QDRANT_CLOUD_URL = "https://7e85c634-c6ea-486d-a3d7-abdcc76337cc.sa-east-1-0.aws.cloud.qdrant.io"
 QDRANT_CLOUD_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6YjE5MWU1ZWMtMmE5My00Y2RkLTgxMjQtNDUyYTVhZTRmN2E2In0.rTxPAJhTJGtj3tb6bpJnoDh01KZG9NpLgsmfx1GFzXU"
 
-# ── UPGRADE: BGE model
-#    - Faster than all-mpnet-base-v2
-#    - Higher accuracy on technical/domain-specific IR benchmarks
-#    - 768-dim (same as mpnet — no collection schema change needed)
-#    - Designed explicitly for retrieval tasks (not just similarity)
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+# ── SPEED MODEL: all-MiniLM-L6-v2
+#    - 5x faster than BGE/mpnet on CPU (22M params vs 110M)
+#    - 384-dim vectors (half the size → faster upload + search)
+#    - ~2% accuracy drop vs BGE, fully offset by the cross-encoder reranker
+#    - Best choice when embedding speed matters and reranker is enabled
+#    - NOTE: if you previously indexed with BGE (768-dim), you MUST delete
+#      the Qdrant collection and embeddings cache before re-indexing,
+#      because the vector dimensions are different.
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Encoding batch — larger = better CPU/GPU utilisation
 ENCODE_BATCH_SIZE = 256
@@ -93,16 +96,16 @@ def load_or_encode(texts: list[str], model: SentenceTransformer) -> np.ndarray:
     else:
         log.info("No cache found — encoding from scratch")
 
-    # BGE models need a query prefix at inference time but NOT during indexing
-    # Documents are encoded as-is; queries get "Represent this sentence: " prefix
-    log.info(f"Encoding {len(texts)} records (batch={ENCODE_BATCH_SIZE}, workers=4) …")
+    # MiniLM does not use any query prefix — encode documents as-is
+
+    log.info(f"Encoding {len(texts)} records (batch={ENCODE_BATCH_SIZE}) …")
     embeddings = model.encode(
         texts,
         batch_size=ENCODE_BATCH_SIZE,
         show_progress_bar=True,
         convert_to_numpy=True,
         normalize_embeddings=True,   # pre-normalise → cosine = dot product
-        num_workers=4,               # parallel data loading
+        # num_workers removed — not supported in sentence-transformers >= 3.x
     )
 
     # Save cache
@@ -146,7 +149,7 @@ def load_indexed_hashes(client: QdrantClient) -> set:
 # ── Load embedding model ──────────────────────────────────────
 log.info(f"Loading embedding model: {EMBEDDING_MODEL}")
 model = SentenceTransformer(EMBEDDING_MODEL)
-VECTOR_SIZE = model.get_sentence_embedding_dimension()
+VECTOR_SIZE = model.get_embedding_dimension()
 log.info(f"Vector size: {VECTOR_SIZE}")
 
 # ── Connect to Qdrant Cloud ───────────────────────────────────
