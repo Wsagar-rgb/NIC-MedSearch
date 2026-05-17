@@ -1,12 +1,17 @@
 # ─────────────────────────────────────────────────────────────
 # app.py — NIC MedSearch Streamlit UI (Cloud Version)
-# RAG-only: Qdrant Cloud + Groq LLM
-# UPDATED: light-blue UI + improved retrieval accuracy
+# OPTIMIZED:
+#   - BGE model (matches embed_and_index.py)
+#   - Cross-encoder reranker (higher accuracy)
+#   - BGE query prefix at search time
+#   - Removed expand_query() noise injection
+#   - Score threshold aligned with query.py (0.45)
+#   - Cleaner, more structured LLM prompts
 # Usage: streamlit run app.py
 # ─────────────────────────────────────────────────────────────
 
 import streamlit as st
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 from groq import Groq
 
@@ -18,18 +23,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS  (light-blue theme) ────────────────────────────
+# ── Custom CSS (light-blue theme) ─────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
 * { font-family: 'IBM Plex Sans', sans-serif; }
 
-/* ── Main background: light blue ── */
 .stApp                          { background-color: #e8f4fd; color: #1e3a5f; }
 section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px solid #a8d4f0; }
 
-/* ── Header card ── */
 .main-header {
     background: linear-gradient(135deg, #1a6ebd 0%, #2389da 100%);
     border: 1px solid #1a6ebd; border-radius: 12px;
@@ -45,7 +48,6 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
 .main-header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 2rem; font-weight: 600; color: #ffffff; margin: 0; }
 .main-header p  { color: #c8e6fa; margin: 0.5rem 0 0 0; font-size: 0.9rem; }
 
-/* ── Badges ── */
 .badge {
     display: inline-block;
     background: rgba(255,255,255,0.25);
@@ -55,7 +57,6 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
     font-size: 0.75rem; font-family: 'IBM Plex Mono', monospace; margin-right: 6px;
 }
 
-/* ── Text area ── */
 .stTextArea textarea {
     background-color: #ffffff !important;
     border: 1px solid #90c4e8 !important;
@@ -67,7 +68,6 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
     box-shadow: 0 0 0 2px rgba(26,110,189,0.2) !important;
 }
 
-/* ── Search button ── */
 .stButton > button {
     background: linear-gradient(135deg, #1a6ebd, #2389da) !important;
     color: white !important; border: none !important;
@@ -80,7 +80,6 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
     box-shadow: 0 4px 15px rgba(26,110,189,0.35) !important;
 }
 
-/* ── Result cards ── */
 .result-card {
     background: #ffffff;
     border: 1px solid #b8daf2;
@@ -93,13 +92,11 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
 .result-equipment { font-size: 1rem; font-weight: 600; color: #1e3a5f; margin-bottom: 0.4rem; }
 .result-content   { font-size: 0.85rem; color: #4a7fa5; line-height: 1.5; }
 
-/* ── Score badges ── */
 .score-badge { float: right; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
 .score-high  { background: rgba(22,160,133,0.15);  color: #16a085; }
 .score-mid   { background: rgba(230,126,34,0.15);  color: #e67e22; }
 .score-low   { background: rgba(74,127,165,0.12);  color: #4a7fa5; }
 
-/* ── AI response box ── */
 .ai-response {
     background: #ffffff;
     border: 1px solid #90c4e8; border-radius: 10px;
@@ -109,7 +106,6 @@ section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px s
     box-shadow: 0 2px 8px rgba(26,110,189,0.08);
 }
 
-/* ── Metric box ── */
 .metric-box  { background: #ffffff; border: 1px solid #b8daf2; border-radius: 8px; padding: 1rem; text-align: center; }
 .metric-value{ font-family: 'IBM Plex Mono', monospace; font-size: 1.8rem; font-weight: 600; color: #1a6ebd; }
 .metric-label{ font-size: 0.75rem; color: #4a7fa5; margin-top: 0.2rem; }
@@ -125,24 +121,36 @@ QDRANT_API_KEY  = st.secrets["QDRANT_API_KEY"]
 GROQ_API_KEY    = st.secrets["GROQ_API_KEY"]
 COLLECTION_NAME = "nic_medsearch"
 
-# Must match embed_and_index.py
-EMBEDDING_MODEL = "all-mpnet-base-v2"
+# UPDATED: must match embed_and_index.py — was all-mpnet-base-v2
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+
+# Cross-encoder for reranking retrieved candidates
+RERANKER_MODEL  = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 LLM_MODEL       = "llama-3.3-70b-versatile"
 
-# ACCURACY: fetch more candidates, then re-rank / filter
-TOP_K           = 8      # retrieve more, show the best
-SCORE_THRESHOLD = 0.45   # cosine on normalised vectors (0-1 range)
+# LOWERED from 0.72: reranker handles quality filtering,
+# so we fetch more candidates at a lower threshold first
+SCORE_THRESHOLD = 0.45
+
+# Fetch more candidates than we show — reranker picks the best ones
+FETCH_K         = 10
+
+# BGE query prefix — required for correct retrieval with BGE models
+# Documents are indexed WITHOUT this prefix; queries need it at search time
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 
 # ── Load models ───────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading embedding model & connections…")
-def load_models(cache_version=4):
+@st.cache_resource(show_spinner="Loading models & connections…")
+def load_models():
     embedder = SentenceTransformer(EMBEDDING_MODEL)
+    reranker = CrossEncoder(RERANKER_MODEL)
     qdrant   = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
     groq     = Groq(api_key=GROQ_API_KEY)
-    return embedder, qdrant, groq
+    return embedder, reranker, qdrant, groq
 
-embedder, qdrant, groq_client = load_models(cache_version=4)
+embedder, reranker, qdrant, groq_client = load_models()
 
 try:
     qdrant.get_collections()
@@ -154,7 +162,7 @@ try:
     )
     st.sidebar.success("Groq OK ✅")
 except Exception as e:
-    st.sidebar.error(f"Error: {str(e)}")
+    st.sidebar.error(f"Connection error: {str(e)}")
     st.stop()
 
 
@@ -162,152 +170,165 @@ except Exception as e:
 # CORE RAG FUNCTIONS
 # ══════════════════════════════════════════════════════════════
 
-def expand_query(query: str) -> str:
+def search_similar(query: str, fetch_k: int, doc_filter: str) -> list:
     """
-    ACCURACY: prepend short queries with medical-equipment context
-    so the embedding sits closer to the indexed domain vocabulary.
+    Embed query with BGE prefix and retrieve top candidates from Qdrant.
+    Applies optional doc_type filter. Falls back to no threshold if empty.
     """
-    q = query.strip()
-    medical_prefixes = ["equipment", "medical", "hospital", "biomedical"]
-    first_word = q.split()[0].lower() if q else ""
-    if first_word not in medical_prefixes and len(q.split()) <= 5:
-        q = f"medical equipment problem: {q}"
-    return q
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-
-def search_similar(query: str, top_k: int, doc_filter: str) -> list:
-    from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchText
-
-    expanded_query = expand_query(query)
-    query_vector   = embedder.encode(
-        expanded_query,
-        normalize_embeddings=True,   # must match index normalisation
+    # BGE requires this prefix on queries (NOT on indexed documents)
+    prefixed = BGE_QUERY_PREFIX + query.strip()
+    query_vector = embedder.encode(
+        prefixed,
+        normalize_embeddings=True,
     ).tolist()
 
+    # Build doc_type filter if selected
     search_filter = None
     if doc_filter == "Repair Records Only":
-        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))])
+        search_filter = Filter(must=[
+            FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))
+        ])
     elif doc_filter == "Manuals Only":
-        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))])
+        search_filter = Filter(must=[
+            FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))
+        ])
 
-    # ── ACCURACY: Hybrid search (keyword ∩ vector) for short specific queries ──
-    # Try keyword-boosted first; if empty fall back to pure vector.
-    if len(query.strip().split()) <= 8:
-        try:
-            keyword_filter = Filter(
-                must=[FieldCondition(key="content", match=MatchText(text=query.strip()))]
-            )
-            if search_filter:
-                keyword_filter.must.extend(search_filter.must)
-
-            results = qdrant.query_points(
-                collection_name=COLLECTION_NAME,
-                query=query_vector,
-                query_filter=keyword_filter,
-                limit=top_k,
-                with_payload=True,
-                score_threshold=SCORE_THRESHOLD,
-            ).points
-            if results:
-                return results
-        except Exception:
-            pass  # fall through to pure vector
-
-    return qdrant.query_points(
+    # Attempt 1: with score threshold
+    results = qdrant.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
-        limit=top_k,
-        with_payload=True,
         query_filter=search_filter,
+        limit=fetch_k,
+        with_payload=True,
         score_threshold=SCORE_THRESHOLD,
     ).points
 
+    # Attempt 2: no threshold fallback (last resort)
+    if not results:
+        results = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vector,
+            query_filter=search_filter,
+            limit=fetch_k,
+            with_payload=True,
+        ).points
 
-def filter_by_score(results: list, top_n: int) -> list:
+    return results
+
+
+def rerank_results(query: str, results: list, top_n: int) -> list:
     """
-    Return the top_n highest-scoring results.
-    No hard floor — the score_threshold in Qdrant already removes noise.
+    Use a cross-encoder to rerank candidates.
+    Cross-encoders score (query, document) pairs jointly —
+    far more accurate than cosine similarity for final ranking.
     """
-    sorted_results = sorted(results, key=lambda r: r.score, reverse=True)
-    return sorted_results[:top_n]
+    if not results:
+        return results
+
+    pairs  = [(query, r.payload.get("content", "")) for r in results]
+    scores = reranker.predict(pairs, show_progress_bar=False)
+
+    ranked = sorted(zip(scores, results), key=lambda x: x[0], reverse=True)
+    return [r for _, r in ranked[:top_n]]
 
 
 def build_context(results: list) -> str:
-    """
-    ACCURACY: include more content per record and show confidence
-    so the LLM can weight evidence appropriately.
-    """
     parts = []
     for i, r in enumerate(results):
-        p = r.payload
-        parts.append(f"""
-Record {i+1} (Similarity: {r.score:.2%}):
-  Equipment   : {p.get('equipment_name', 'N/A')}
-  Manufacturer: {p.get('manufacturer', 'N/A')}
-  Model       : {p.get('model', 'N/A')}
-  Hospital    : {p.get('hospital', 'N/A')}
-  Source      : {p.get('source_file', 'N/A')}
-  Problem     : {str(p.get('fault_description', ''))[:200]}
-  Diagnosis   : {str(p.get('initial_diagnosis', ''))[:200]}
-  Work Done   : {str(p.get('action_taken', ''))[:200]}
-  Content     : {str(p.get('content', ''))[:300]}
-""")
+        p        = r.payload
+        doc_type = p.get("doc_type", "repair_record")
+
+        if doc_type in ("manual_section", "manual_sub_section"):
+            parts.append(
+                f"Manual Section {i+1} (Score: {r.score:.2%}):\n"
+                f"  Source  : {p.get('source_file', 'N/A')}\n"
+                f"  Title   : {p.get('title', 'N/A')}\n"
+                f"  Content : {str(p.get('content', ''))[:400]}\n"
+            )
+        else:
+            parts.append(
+                f"Repair Record {i+1} (Score: {r.score:.2%}):\n"
+                f"  Equipment   : {p.get('equipment_name', 'N/A')}\n"
+                f"  Manufacturer: {p.get('manufacturer', 'N/A')}\n"
+                f"  Model       : {p.get('model', 'N/A')}\n"
+                f"  Hospital    : {p.get('hospital', 'N/A')}\n"
+                f"  Problem     : {str(p.get('fault_description', ''))[:200]}\n"
+                f"  Diagnosis   : {str(p.get('initial_diagnosis', ''))[:200]}\n"
+                f"  Work Done   : {str(p.get('action_taken', ''))[:200]}\n"
+            )
     return "\n".join(parts)
 
 
-def ask_groq(query: str, local_context: str) -> str:
-    manual_keywords = [
-        "manual", "service", "procedure", "how to", "steps",
-        "removing", "replace", "install", "disassemble", "repair guide",
-        "calibration", "maintenance schedule",
-    ]
-    is_manual = any(w in query.lower() for w in manual_keywords)
+def ask_groq(query: str, context: str) -> str:
+    spec_keywords   = ["specification", "spec", "technical", "requirement",
+                       "voltage", "power", "weight", "dimension", "frequency",
+                       "quantity", "install"]
+    manual_keywords = ["manual", "service", "procedure", "how to", "steps",
+                       "removing", "replace", "disassemble", "assemble",
+                       "calibration", "maintenance", "repair guide", "leak test"]
 
-    # ACCURACY: give the LLM the full context (up to ~3 500 chars)
-    combined = local_context[:3500]
+    is_spec_query   = any(w in query.lower() for w in spec_keywords)
+    is_manual_query = any(w in query.lower() for w in manual_keywords)
 
-    if is_manual:
-        prompt = f"""You are a certified medical equipment technical specialist.
-You have been given sections retrieved from official service manuals and technical documentation.
+    if is_spec_query:
+        prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
+Based ONLY on the technical specification records below, answer the query accurately.
 
-RETRIEVED MANUAL SECTIONS:
-{combined}
+RETRIEVED RECORDS:
+{context}
 
 QUERY: {query}
 
-Using ONLY the information from the manual sections above, provide:
-1. What the manual says about this topic
-2. Step-by-step procedure or explanation exactly as described in the manual
-3. Any warnings, safety notes, or calibration steps mentioned
-4. Parts, tools, or consumables referenced in the manual
-5. Your confidence level: HIGH / MEDIUM / LOW — based on how directly the sections address the query
+Instructions:
+- Summarize only the key specifications relevant to the query.
+- Be specific and factual. Use numbers and units where available.
+- If the records do not contain the requested specification, say:
+  "This information was not found in the available records."
+- Do NOT invent or estimate any values not in the records."""
 
-If the sections do not contain enough information, say so clearly.
-Do not generate answers from general knowledge. Cite the source section where relevant."""
+    elif is_manual_query:
+        prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
+Based ONLY on the manual sections retrieved below, answer the query.
+
+RETRIEVED MANUAL SECTIONS:
+{context}
+
+QUERY: {query}
+
+Instructions:
+- Use ONLY information from the sections above.
+- If sections are from a different device than the one asked about,
+  clearly state that before giving any advice.
+- Provide numbered, step-by-step instructions where applicable.
+- Mention tools, parts, or safety precautions referenced in the sections.
+- If sections do not cover the query, say:
+  "The retrieved sections do not contain this procedure."
+- Confidence level: HIGH / MEDIUM / LOW"""
 
     else:
         prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
 Use the past repair records below to diagnose and resolve this problem.
 
 PAST REPAIR RECORDS:
-{combined}
+{context}
 
-NEW PROBLEM: {query}
+CURRENT PROBLEM: {query}
 
 Provide a structured response:
-1. Most similar past cases (with similarity scores noted) and what resolved them
+1. Most similar past cases and what resolved them
 2. Most likely root cause based on the evidence
-3. Step-by-step recommended action
-4. Parts or tools needed
-5. Estimated urgency: CRITICAL / HIGH / MEDIUM / LOW
+3. Recommended step-by-step action
+4. Parts or tools likely needed
+5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
 
-Be concise, practical, and reference specific past cases where relevant.
-If the records do not match the problem well, say so rather than guessing."""
+If the records do not match the problem well, say so instead of guessing."""
 
     response = groq_client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=900,      # more room for structured output
+        max_tokens=900,
         temperature=0.05,    # near-zero for factual, deterministic answers
     )
     return response.choices[0].message.content
@@ -333,7 +354,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**⚙️ Search Settings**")
-    top_k      = st.slider("Number of results", 3, 10, 5)
+    top_k      = st.slider("Results to show", 3, 10, 5)
     doc_filter = st.selectbox("Filter by source",
         ["All Sources", "Repair Records Only", "Manuals Only"])
     enable_ai  = st.toggle("🤖 Enable AI Response", value=True)
@@ -374,9 +395,9 @@ st.markdown("""
     <p>Hospital Equipment Intelligence & Retrieval System</p>
     <br/>
     <span class='badge'>RAG</span>
+    <span class='badge'>BGE + CrossEncoder</span>
     <span class='badge'>Groq LLM</span>
     <span class='badge'>Qdrant Cloud</span>
-    <span class='badge'>3 Hospitals</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -386,43 +407,45 @@ with col1:
         "Query",
         value=st.session_state.get("query", ""),
         height=100,
-        placeholder="e.g. 'microscope not showing clear image' or 'removing the keyboard table T2'",
+        placeholder="e.g. 'ventilator alarm not stopping' or 'ECG calibration steps'",
         label_visibility="collapsed"
     )
 with col2:
     st.markdown("<br/>", unsafe_allow_html=True)
     search_clicked = st.button("🔍 Search", use_container_width=True)
 
-# ── Results ───────────────────────────────────────────────────
+# ── Search & display results ──────────────────────────────────
 if search_clicked and query.strip():
 
-    with st.spinner("Searching knowledge base…"):
-        raw_results = search_similar(query, TOP_K, doc_filter)
-        results     = filter_by_score(raw_results, top_k)
+    with st.spinner(f"Retrieving {FETCH_K} candidates …"):
+        candidates = search_similar(query, FETCH_K, doc_filter)
 
-    if not results:
-        st.warning("No results found above the confidence threshold. Try rephrasing your query or lowering the filter.")
+    if not candidates:
+        st.warning("No results found. Try rephrasing your query.")
     else:
+        with st.spinner(f"Reranking {len(candidates)} candidates …"):
+            results = rerank_results(query, candidates, top_n=top_k)
+
         col_results, col_ai = st.columns([1, 1])
 
         with col_results:
-            st.markdown(f"**📋 Top {len(results)} Records**")
+            st.markdown(f"**📋 Top {len(results)} Results** (after reranking)")
             st.markdown("---")
             for r in results:
                 p        = r.payload
-                doc_type = p.get('doc_type', 'repair_record')
+                doc_type = p.get("doc_type", "repair_record")
                 cc       = get_card_class(doc_type)
                 sc       = get_score_class(r.score)
 
                 if "repair" in doc_type:
                     icon, title = "🔧", f"REPAIR — {p.get('hospital','N/A')}"
-                    main_text   = p.get('equipment_name', 'N/A')
+                    main_text   = p.get("equipment_name", "N/A")
                     detail      = f"Problem: {str(p.get('fault_description',''))[:150]}"
                     detail2     = f"Work Done: {str(p.get('action_taken',''))[:150]}"
                 else:
                     icon, title = "📘", f"MANUAL — {p.get('source_file','N/A')}"
-                    main_text   = p.get('title', 'Manual Section')
-                    detail      = str(p.get('content',''))[:250]
+                    main_text   = p.get("title", "Manual Section")
+                    detail      = str(p.get("content",""))[:250]
                     detail2     = ""
 
                 st.markdown(f"""
@@ -441,15 +464,17 @@ if search_clicked and query.strip():
                 st.markdown("**🤖 AI Recommendation**")
                 st.markdown("---")
                 with st.spinner("Generating response…"):
-                    local_ctx = build_context(results)
-                    answer    = ask_groq(query, local_ctx)
+                    context = build_context(results)
+                    answer  = ask_groq(query, context)
 
                 st.markdown(f"""
                 <div class='ai-response'>
                     <div style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#1a6ebd;margin-bottom:0.5rem;'>
                         ⚡ {LLM_MODEL} via Groq
                     </div>
-                    <div style='margin-bottom:1rem;'><span class='badge' style='background:rgba(26,110,189,0.15);border-color:rgba(26,110,189,0.4);color:#1a6ebd;'>Local KB</span></div>
+                    <div style='margin-bottom:1rem;'>
+                        <span class='badge' style='background:rgba(26,110,189,0.15);border-color:rgba(26,110,189,0.4);color:#1a6ebd;'>BGE + CrossEncoder</span>
+                    </div>
                     {answer}
                 </div>
                 """, unsafe_allow_html=True)
@@ -469,6 +494,6 @@ elif search_clicked:
 st.markdown("---")
 st.markdown("""
 <div style='text-align:center;color:#4a7fa5;font-size:0.8rem;font-family:IBM Plex Mono,monospace;'>
-    NIC MedSearch · Qdrant Cloud + Groq · Always On · Free
+    NIC MedSearch · BGE + CrossEncoder · Qdrant Cloud + Groq
 </div>
 """, unsafe_allow_html=True)

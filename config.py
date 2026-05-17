@@ -20,9 +20,29 @@ MANUAL_JSONL      = PROCESSED_DIR / "manuals.jsonl"
 # ── Qdrant / RAG ──────────────────────────────────────────────
 QDRANT_URL      = "http://localhost:6333"
 COLLECTION_NAME = "nic_medsearch"
-EMBEDDING_MODEL = "multi-qa-mpnet-base-dot-v1"
+
+# UPDATED: BGE model — faster and more accurate than all-mpnet-base-v2
+# for technical/domain-specific retrieval tasks.
+# Must match the model used in embed_and_index.py.
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+
+# Cross-encoder reranker — used in query.py to rerank retrieved results.
+# Scores (query, document) pairs directly for higher accuracy.
+RERANKER_MODEL  = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 LLM_MODEL       = "llama3.2:3b"
+
+# Number of final results shown to user (after reranking)
 TOP_K           = 5
+
+# Candidates fetched from Qdrant before reranking (always >= TOP_K)
+FETCH_K         = TOP_K * 2
+
+# Score threshold for Qdrant retrieval
+# LOWERED from 0.72 → 0.45: the reranker handles quality filtering,
+# so we fetch more candidates at a lower threshold first.
+SCORE_THRESHOLD = 0.45
+
 BATCH_SIZE      = 64
 
 # ── Column mapping (handles all 3 CSV variants) ───────────────
