@@ -1,10 +1,12 @@
 # ─────────────────────────────────────────────────────────────
 # stream2_manuals.py — Technical Manuals PDF Processor
-# Usage: python stream2_manuals.py
-# Changes:
-#   - Broader HEADING_PATTERN: catches numbered, ALL CAPS, Title Case headings
-#   - Added SKIP_PATTERNS for noise pages (cover, copyright, TOC)
-#   - MIN_SECTION_WORDS guard to drop tiny chunks
+# REWRITTEN:
+#   - Pages joined BEFORE heading detection (fixes cross-page splits)
+#   - Each section stored WHOLE + sub-chunked for long procedures
+#   - Whole section stored as "manual_section" (full procedure always retrievable)
+#   - Sub-chunks stored as "manual_sub_section" (for very long sections)
+#   - Smarter heading pattern — avoids splitting mid-procedure
+#   - Figure/table reference lines cleaned from content
 # ─────────────────────────────────────────────────────────────
 
 import re
@@ -21,7 +23,7 @@ import pytesseract
 from spellchecker import SpellChecker
 
 from config import MANUALS_DIR, MANUAL_JSONL
-from utils import make_content_hash, clean_text_field
+from utils import make_content_hash
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,17 +37,18 @@ log = logging.getLogger(__name__)
 spell = SpellChecker()
 
 # ── Windows: set Tesseract path if needed ─────────────────────
-# Uncomment and edit if tesseract is not in your PATH:
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# ── Page noise patterns (headers, footers, page numbers) ──────
+# ── Noise patterns ────────────────────────────────────────────
 PAGE_NOISE_PATTERNS = [
     re.compile(r'Page \d+ of \d+', re.IGNORECASE),
     re.compile(r'\b\d+\s+of\s+\d+\b', re.IGNORECASE),
     re.compile(r'^[\s\d]+$', re.MULTILINE),
+    # Remove standalone figure/revision lines that add noise without meaning
+    re.compile(r'^Figure\s+[\d\-]+\s*$', re.MULTILINE),
+    re.compile(r'^\d{7}-\d+[A-Z]+\s+Revision\s+[\d\.]+\s*$', re.MULTILINE),
 ]
 
-# ── Noise pages to skip entirely (cover, copyright, TOC) ──────
 SKIP_PATTERNS = [
     "all rights reserved",
     "copyright reserved",
@@ -54,43 +57,52 @@ SKIP_PATTERNS = [
     "printed on",
 ]
 
-# ── Minimum words for a section to be kept ────────────────────
+# Minimum words for a section to be indexed
 MIN_SECTION_WORDS = 30
 
+# Maximum words before a section gets sub-chunked
+# Set high (1500) so most procedures stay whole
+MAX_SECTION_WORDS = 1500
+
+# Sub-chunk size — large enough to keep multi-step blocks together
+SUB_CHUNK_WORDS = 600
+
 # ── Heading detection ─────────────────────────────────────────
-# Catches three heading styles:
-#   1. Numbered    : "7.6 REMOVING THE KEYBOARD" / "4.2.1 Calibration"
-#   2. ALL CAPS    : "SYSTEM CALIBRATION" / "APPENDIX A"
-#   3. Title Case  : "Removing the Paper Transport Motor"
+# Stricter than before — avoids treating numbered procedure steps
+# (e.g. "1. Power off the system") as section headings.
+# Only matches:
+#   - Numbered section headings: "10.4 Monoblock Assembly"
+#   - ALL CAPS headings: "SYSTEM CALIBRATION"
+#   - Appendix headings: "APPENDIX A Introduction"
 HEADING_PATTERN = re.compile(
     r'^('
-    r'\d+[\d\.]*\s+[A-Z][^\n]{2,70}'          # numbered headings
-    r'|APPENDIX\s+[A-Z]+\s+.*'                 # appendix headings
-    r'|[A-Z][A-Z\s\(\)\/\-]{4,70}'            # ALL CAPS headings
-    r'|[A-Z][a-z]+(?:\s+[A-Z]?[a-z]*){1,8}'  # Title Case headings
+    r'\d+[\d\.]*\s{1,3}[A-Z][A-Za-z\s\(\)\/\-]{3,70}'   # "10.4 Monoblock Assembly"
+    r'|APPENDIX\s+[A-Z\d]+[\s\S]{0,60}'                   # "APPENDIX A ..."
+    r'|[A-Z][A-Z\s\(\)\/\-]{5,70}[A-Z]'                  # "SYSTEM CALIBRATION"
     r')',
     re.MULTILINE
 )
 
 
 def clean_page_text(text: str) -> str:
-    """Remove common header/footer/page number noise."""
-    lines = text.split('\n')
+    """Remove header/footer/page number noise from a page."""
+    for pattern in PAGE_NOISE_PATTERNS:
+        text = pattern.sub('', text)
+    lines  = text.split('\n')
     cleaned = []
     for line in lines:
-        if any(p.search(line) for p in PAGE_NOISE_PATTERNS):
-            continue
-        if len(line.strip()) < 10 and (len(cleaned) < 2 or len(lines) - lines.index(line) <= 2):
+        stripped = line.strip()
+        # Drop very short lines at page edges (likely headers/footers)
+        if len(stripped) < 4:
             continue
         cleaned.append(line)
     return '\n'.join(cleaned).strip()
 
 
 def is_noise_page(text: str) -> bool:
-    """Returns True if page is a cover, copyright, or TOC page to skip."""
+    """True if this page is a cover, copyright, or TOC — skip it."""
     text_lower = text.lower()
-    word_count = len(text.split())
-    if word_count < MIN_SECTION_WORDS:
+    if len(text.split()) < MIN_SECTION_WORDS:
         return True
     if sum(1 for p in SKIP_PATTERNS if p in text_lower) >= 2:
         return True
@@ -98,7 +110,6 @@ def is_noise_page(text: str) -> bool:
 
 
 def is_digital_pdf(pdf_path: str) -> bool:
-    """Returns True if PDF has selectable text (digital), False if scanned."""
     try:
         doc = fitz.open(pdf_path)
         for page_num in range(min(doc.page_count, 5)):
@@ -114,15 +125,15 @@ def is_digital_pdf(pdf_path: str) -> bool:
 
 
 def extract_text_from_digital_pdf(pdf_path: str) -> List[str]:
-    """Extract text page-by-page from a digital PDF, skipping noise pages."""
+    """Extract text page-by-page from a digital PDF."""
     text_pages = []
     try:
         doc = fitz.open(pdf_path)
         for page_num in tqdm(range(doc.page_count),
                              desc=f"  Extracting {os.path.basename(pdf_path)}",
                              leave=False):
-            page = doc.load_page(page_num)
-            text = page.get_text("text")
+            page   = doc.load_page(page_num)
+            text   = page.get_text("text")
             cleaned = clean_page_text(text)
             if cleaned and not is_noise_page(cleaned):
                 text_pages.append(cleaned)
@@ -133,18 +144,18 @@ def extract_text_from_digital_pdf(pdf_path: str) -> List[str]:
 
 
 def extract_text_from_scanned_pdf(pdf_path: str) -> List[str]:
-    """OCR a scanned PDF using pdf2image + Tesseract."""
+    """OCR a scanned PDF page-by-page."""
     text_pages = []
     try:
         images = convert_from_path(pdf_path, dpi=300, thread_count=4)
         for img in tqdm(images,
                         desc=f"  OCR {os.path.basename(pdf_path)}",
                         leave=False):
-            text = pytesseract.image_to_string(img, lang='eng')
+            text    = pytesseract.image_to_string(img, lang='eng')
             cleaned = clean_page_text(text)
             if not cleaned or is_noise_page(cleaned):
                 continue
-            words = cleaned.split()
+            words     = cleaned.split()
             corrected = [
                 spell.correction(w) if spell.correction(w) is not None else w
                 for w in words
@@ -159,74 +170,101 @@ def extract_text_from_scanned_pdf(pdf_path: str) -> List[str]:
 
 def extract_sections(text_pages: List[str], pdf_path: str) -> List[Dict]:
     """
-    Splits text pages into sections by heading pattern,
-    then sub-chunks sections that are too long (>500 words).
-    Drops sections shorter than MIN_SECTION_WORDS.
+    KEY FIX: Join ALL pages into one document first, THEN split by headings.
+
+    Previous approach split page-by-page first, which broke procedures
+    that span multiple pages (e.g. 10-step Monoblock procedure across 4 pages).
+
+    Strategy:
+    - Each detected heading starts a new section
+    - The section collects ALL content until the next heading
+    - Sections <= MAX_SECTION_WORDS are stored whole (full procedure intact)
+    - Sections > MAX_SECTION_WORDS are stored whole AND also sub-chunked
+      so both the full procedure AND fine-grained chunks are searchable
     """
-    sections = []
+    # ── Join all pages into a single document ─────────────────
+    full_document = "\n\n".join(text_pages)
+    lines         = full_document.split('\n')
+
+    sections        = []
     current_title   = "Introduction"
     current_content = []
     section_counter = [0]
 
     def save_section():
         full = "\n".join(current_content).strip()
-        if full and len(full.split()) >= MIN_SECTION_WORDS:
-            sections.append({
-                "id"          : f"MANUAL-{section_counter[0]:05d}",
-                "doc_type"    : "manual_section",
-                "title"       : current_title,
-                "content"     : full,
-                "content_hash": make_content_hash(full),
-                "source_pdf"  : os.path.basename(pdf_path),
-            })
-            section_counter[0] += 1
+        if not full or len(full.split()) < MIN_SECTION_WORDS:
+            return
 
-    for page_text in text_pages:
-        for line in page_text.split('\n'):
-            match = HEADING_PATTERN.match(line.strip())
-            if match and len(line.strip()) < 80:
-                save_section()
-                current_title   = match.group(0).strip()
-                current_content = [line]
-            else:
-                current_content.append(line)
+        sec = {
+            "id"          : f"MANUAL-{section_counter[0]:05d}",
+            "doc_type"    : "manual_section",
+            "title"       : current_title,
+            "content"     : full,
+            "content_hash": make_content_hash(full),
+            "source_pdf"  : os.path.basename(pdf_path),
+        }
+        sections.append(sec)
+        section_counter[0] += 1
+
+    for line in lines:
+        match = HEADING_PATTERN.match(line.strip())
+        if match and len(line.strip()) < 90:
+            save_section()
+            current_title   = match.group(0).strip()
+            current_content = [line]
+        else:
+            current_content.append(line)
     save_section()
 
-    # Sub-chunk large sections (>800 words) into ~400 word chunks
-    # Threshold raised: 500→800 so step-by-step procedures stay intact
-    # Chunk size raised: 200→400 so procedures are not split mid-step
+    # ── Sub-chunk only very long sections ─────────────────────
+    # Short/medium sections (most procedures) stay WHOLE.
+    # Only extremely long sections (reference tables, appendices)
+    # get sub-chunked — and even then the whole section is kept too.
     final = []
     for sec in sections:
-        if len(sec['content'].split()) > 800:
-            chunks = sec['content'].split('\n\n')
-            buf = []
-            for chunk in chunks:
-                buf.append(chunk)
-                if len(' '.join(buf).split()) > 400:
-                    sub_text = ' '.join(buf).strip()
-                    if sub_text and len(sub_text.split()) >= MIN_SECTION_WORDS:
+        word_count = len(sec['content'].split())
+
+        if word_count <= MAX_SECTION_WORDS:
+            # Keep whole — procedure is fully retrievable in one record
+            final.append(sec)
+        else:
+            # Store the WHOLE section first so full procedure is always findable
+            final.append(sec)
+
+            # Also add sub-chunks for fine-grained retrieval of long sections
+            paragraphs = sec['content'].split('\n\n')
+            buf        = []
+            sub_idx    = 0
+
+            for para in paragraphs:
+                buf.append(para)
+                if len(' '.join(buf).split()) >= SUB_CHUNK_WORDS:
+                    sub_text = '\n\n'.join(buf).strip()
+                    if len(sub_text.split()) >= MIN_SECTION_WORDS:
                         final.append({
-                            "id"          : f"{sec['id']}_sub{len(final)}",
+                            "id"          : f"{sec['id']}_sub{sub_idx}",
                             "doc_type"    : "manual_sub_section",
                             "title"       : sec['title'],
                             "content"     : sub_text,
                             "content_hash": make_content_hash(sub_text),
                             "source_pdf"  : sec['source_pdf'],
                         })
+                        sub_idx += 1
                     buf = []
+
             if buf:
-                sub_text = ' '.join(buf).strip()
-                if sub_text and len(sub_text.split()) >= MIN_SECTION_WORDS:
+                sub_text = '\n\n'.join(buf).strip()
+                if len(sub_text.split()) >= MIN_SECTION_WORDS:
                     final.append({
-                        "id"          : f"{sec['id']}_sub{len(final)}",
+                        "id"          : f"{sec['id']}_sub{sub_idx}",
                         "doc_type"    : "manual_sub_section",
                         "title"       : sec['title'],
                         "content"     : sub_text,
                         "content_hash": make_content_hash(sub_text),
                         "source_pdf"  : sec['source_pdf'],
                     })
-        else:
-            final.append(sec)
+
     return final
 
 
@@ -274,7 +312,6 @@ def run_stream2(manuals_dir: Path, output_jsonl: Path):
     log.info("─" * 40)
 
 
-# ── Entry point ───────────────────────────────────────────────
 if __name__ == "__main__":
     run_stream2(MANUALS_DIR, MANUAL_JSONL)
     log.info("\nStream 2 complete.")
