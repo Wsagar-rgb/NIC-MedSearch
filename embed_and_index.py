@@ -160,20 +160,36 @@ client = QdrantClient(
     timeout=120,
 )
 
-# ── Create collection if it doesn't exist ────────────────────
-# NOTE: we no longer delete and recreate — incremental mode preserves
-# existing vectors and only adds new ones.
+# ── Create or recreate collection ────────────────────────────
+# Checks if the existing collection has the correct vector dimension.
+# If dimension mismatches (e.g. switched from BGE 768-dim to MiniLM 384-dim),
+# the old collection is deleted and recreated automatically.
 existing_collections = [c.name for c in client.get_collections().collections]
 
-if COLLECTION_NAME not in existing_collections:
-    log.info(f"Creating new collection '{COLLECTION_NAME}' …")
+needs_recreate = False
+if COLLECTION_NAME in existing_collections:
+    info = client.get_collection(COLLECTION_NAME)
+    existing_dim = info.config.params.vectors.size
+    if existing_dim != VECTOR_SIZE:
+        log.warning(
+            f"Dimension mismatch: collection has {existing_dim}-dim vectors "
+            f"but model produces {VECTOR_SIZE}-dim. Deleting and recreating …"
+        )
+        client.delete_collection(COLLECTION_NAME)
+        needs_recreate = True
+    else:
+        log.info(f"Collection '{COLLECTION_NAME}' already exists — incremental mode")
+else:
+    needs_recreate = True
+
+if needs_recreate:
+    log.info(f"Creating collection '{COLLECTION_NAME}' (cosine, dim={VECTOR_SIZE}) …")
     client.create_collection(
         collection_name=COLLECTION_NAME,
         vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
     )
-    log.info(f"Collection '{COLLECTION_NAME}' created (cosine, dim={VECTOR_SIZE})")
 
-    # ── Payload indexes (only needed on first creation) ───────
+    # ── Payload indexes (only on fresh collection) ────────────
     log.info("Creating payload indexes …")
     client.create_payload_index(
         collection_name=COLLECTION_NAME,
@@ -193,8 +209,6 @@ if COLLECTION_NAME not in existing_collections:
             field_schema=PayloadSchemaType.KEYWORD,
         )
     log.info("Payload indexes created.")
-else:
-    log.info(f"Collection '{COLLECTION_NAME}' already exists — incremental mode")
 
 # ── Load existing hashes to skip unchanged records ────────────
 indexed_hashes = load_indexed_hashes(client)
