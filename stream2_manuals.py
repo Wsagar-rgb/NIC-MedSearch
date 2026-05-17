@@ -124,19 +124,114 @@ def is_digital_pdf(pdf_path: str) -> bool:
         return False
 
 
+def extract_tables_from_page(page) -> str:
+    """
+    Extract tables from a PDF page using PyMuPDF table detection.
+    Each table row is joined into one sentence:
+      "Failure: X. Cause: Y. Action: Z."
+    This keeps all columns of a row together in one record,
+    so troubleshooting tables (Failure | Cause | Action) are never split.
+    """
+    table_text = []
+    try:
+        tables = page.find_tables()
+        for table in tables:
+            rows = table.extract()
+            if not rows:
+                continue
+
+            # Try to detect column headers from first row
+            headers = [str(cell).strip() if cell else "" for cell in rows[0]]
+            has_headers = any(
+                h.lower() in (
+                    "failure", "symptom", "problem", "description",
+                    "cause", "possible cause", "reason",
+                    "action", "recommended action", "remedy", "solution",
+                    "error", "alarm", "fault"
+                )
+                for h in headers
+            )
+
+            data_rows = rows[1:] if has_headers else rows
+
+            for row in data_rows:
+                cells = [str(cell).strip() if cell else "" for cell in row]
+                cells = [c for c in cells if c and c.lower() not in ("", "none", "-", "n/a")]
+                if not cells:
+                    continue
+
+                if has_headers and len(headers) == len(row):
+                    # Join as "Header: Value. Header: Value."
+                    parts = []
+                    for h, c in zip(headers, [str(r).strip() if r else "" for r in row]):
+                        if h and c and c.lower() not in ("", "none", "-", "n/a"):
+                            parts.append(f"{h}: {c}")
+                    if parts:
+                        table_text.append(". ".join(parts) + ".")
+                else:
+                    # No headers — join cells with separator
+                    table_text.append(" | ".join(cells))
+
+    except Exception as e:
+        log.debug(f"Table extraction error on page: {e}")
+
+    return "\n".join(table_text)
+
+
 def extract_text_from_digital_pdf(pdf_path: str) -> List[str]:
-    """Extract text page-by-page from a digital PDF."""
+    """
+    Extract text page-by-page from a digital PDF.
+    For each page: extract tables first (structured), then remaining text.
+    Table rows are joined so Failure|Cause|Action columns stay together.
+    """
     text_pages = []
     try:
         doc = fitz.open(pdf_path)
         for page_num in tqdm(range(doc.page_count),
                              desc=f"  Extracting {os.path.basename(pdf_path)}",
                              leave=False):
-            page   = doc.load_page(page_num)
-            text   = page.get_text("text")
-            cleaned = clean_page_text(text)
+            page        = doc.load_page(page_num)
+            page_output = []
+
+            # 1. Detect tables and get their bounding boxes
+            table_bboxes  = []
+            table_content = extract_tables_from_page(page)
+            try:
+                for tbl in page.find_tables():
+                    table_bboxes.append(tbl.bbox)
+            except Exception:
+                pass
+
+            if table_content.strip():
+                page_output.append(table_content)
+
+            # 2. Extract only NON-TABLE text to avoid duplication
+            # Use "blocks" to get text with position, skip blocks inside table areas
+            non_table_lines = []
+            try:
+                blocks = page.get_text("blocks")  # (x0,y0,x1,y1,text,block_no,block_type)
+                for block in blocks:
+                    bx0, by0, bx1, by1, block_text = block[0], block[1], block[2], block[3], block[4]
+                    # Check if this block overlaps any table bbox
+                    in_table = any(
+                        bx0 < tx1 and bx1 > tx0 and by0 < ty1 and by1 > ty0
+                        for (tx0, ty0, tx1, ty1) in table_bboxes
+                    )
+                    if not in_table and block_text.strip():
+                        non_table_lines.append(block_text.strip())
+            except Exception:
+                # Fallback: use full page text if block extraction fails
+                non_table_lines = [page.get_text("text")]
+
+            non_table_text = "\n".join(non_table_lines)
+            cleaned        = clean_page_text(non_table_text)
             if cleaned and not is_noise_page(cleaned):
-                text_pages.append(cleaned)
+                page_output.append(cleaned)
+
+            combined = "\n".join(page_output).strip()
+            if combined and not is_noise_page(combined):
+                text_pages.append(combined)
+
         doc.close()
     except Exception as e:
         log.error(f"Error extracting digital PDF {pdf_path}: {e}")
