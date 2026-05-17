@@ -1,13 +1,8 @@
 # ─────────────────────────────────────────────────────────────
 # app.py — NIC MedSearch Streamlit UI
-# FIXES APPLIED:
-#   - Model aligned with embed_and_index.py (all-MiniLM-L6-v2)
-#   - BGE query prefix REMOVED (MiniLM does not use one)
-#   - expand_query() REMOVED (was injecting noise)
-#   - Cross-encoder reranker added
-#   - Score threshold 0.45
-#   - Three distinct LLM prompt templates (spec / manual / repair)
-# Usage: streamlit run app.py
+# UI: Dark clinical theme — deep navy + electric teal accents
+#     Syne + JetBrains Mono fonts, glassmorphism cards,
+#     animated header, clean sidebar with status indicators
 # ─────────────────────────────────────────────────────────────
 
 import streamlit as st
@@ -17,100 +12,368 @@ from groq import Groq
 
 st.set_page_config(
     page_title="NIC MedSearch",
-    page_icon="🏥",
+    page_icon="⚕️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
-* { font-family: 'IBM Plex Sans', sans-serif; }
-.stApp                          { background-color: #e8f4fd; color: #1e3a5f; }
-section[data-testid="stSidebar"]{ background-color: #d0e8f8; border-right: 1px solid #a8d4f0; }
-.main-header {
-    background: linear-gradient(135deg, #1a6ebd 0%, #2389da 100%);
-    border: 1px solid #1a6ebd; border-radius: 12px;
-    padding: 2rem 2.5rem; margin-bottom: 2rem;
-    position: relative; overflow: hidden;
-    box-shadow: 0 4px 20px rgba(26,110,189,0.2);
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500&display=swap');
+
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+html, body, .stApp { font-family: 'Inter', sans-serif; }
+
+/* ── App background — deep navy ── */
+.stApp {
+    background: #080d1a;
+    color: #c8d8f0;
 }
-.main-header::before {
-    content: ''; position: absolute; top: -50%; right: -10%;
-    width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background: #0c1528 !important;
+    border-right: 1px solid rgba(0,210,200,0.12) !important;
 }
-.main-header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 2rem; font-weight: 600; color: #ffffff; margin: 0; }
-.main-header p  { color: #c8e6fa; margin: 0.5rem 0 0 0; font-size: 0.9rem; }
-.badge {
-    display: inline-block; background: rgba(255,255,255,0.25);
-    border: 1px solid rgba(255,255,255,0.5); color: #ffffff;
-    padding: 2px 10px; border-radius: 20px;
-    font-size: 0.75rem; font-family: 'IBM Plex Mono', monospace; margin-right: 6px;
+section[data-testid="stSidebar"] > div { padding: 1.5rem 1.2rem !important; }
+
+/* ── Sidebar logo block ── */
+.sb-logo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0.5rem 0 1.5rem 0;
+    border-bottom: 1px solid rgba(0,210,200,0.12);
+    margin-bottom: 1.5rem;
 }
-.stTextArea textarea {
-    background-color: #ffffff !important; border: 1px solid #90c4e8 !important;
-    border-radius: 8px !important; color: #1e3a5f !important;
+.sb-logo-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: linear-gradient(135deg, #00d2c8, #0066ff);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
 }
-.stTextArea textarea:focus {
-    border-color: #1a6ebd !important;
-    box-shadow: 0 0 0 2px rgba(26,110,189,0.2) !important;
+.sb-logo-text { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1rem; color: #e8f4ff; }
+.sb-logo-sub  { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: #4a7fa5; margin-top: 2px; }
+
+/* ── Sidebar section labels ── */
+.sb-section {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; font-weight: 500;
+    color: #00d2c8; letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 1.5rem 0 0.8rem 0;
 }
+
+/* ── Status pill ── */
+.status-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,210,200,0.06);
+    border: 1px solid rgba(0,210,200,0.15);
+    border-radius: 6px; padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; color: #7ab8d4;
+}
+.status-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #00d2c8;
+    box-shadow: 0 0 6px #00d2c8;
+    flex-shrink: 0;
+}
+.status-pill .dot.err { background: #ff4466; box-shadow: 0 0 6px #ff4466; }
+.status-pill strong { color: #c8e8f8; font-weight: 500; }
+
+/* ── Metric tile ── */
+.metric-tile {
+    background: linear-gradient(135deg, rgba(0,210,200,0.08), rgba(0,102,255,0.06));
+    border: 1px solid rgba(0,210,200,0.18);
+    border-radius: 10px; padding: 1rem 1.2rem;
+    text-align: center; margin-bottom: 1rem;
+}
+.metric-tile .val {
+    font-family: 'Syne', sans-serif; font-size: 2rem;
+    font-weight: 800; color: #00d2c8;
+    line-height: 1;
+}
+.metric-tile .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: #4a7fa5;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-top: 4px;
+}
+
+/* ── Example query buttons ── */
 .stButton > button {
-    background: linear-gradient(135deg, #1a6ebd, #2389da) !important;
-    color: white !important; border: none !important;
-    border-radius: 8px !important; padding: 0.6rem 2rem !important;
-    font-weight: 500 !important; width: 100% !important;
+    background: rgba(0,210,200,0.06) !important;
+    border: 1px solid rgba(0,210,200,0.18) !important;
+    color: #7ab8d4 !important;
+    border-radius: 6px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.72rem !important;
+    padding: 0.4rem 0.8rem !important;
+    width: 100% !important;
+    text-align: left !important;
+    transition: all 0.2s ease !important;
+    margin-bottom: 4px !important;
 }
 .stButton > button:hover {
-    background: linear-gradient(135deg, #155a9e, #1a6ebd) !important;
+    background: rgba(0,210,200,0.14) !important;
+    border-color: rgba(0,210,200,0.4) !important;
+    color: #c8f4f0 !important;
+    transform: translateX(3px) !important;
+}
+
+/* ── Slider & select overrides ── */
+.stSlider > div > div > div { background: #00d2c8 !important; }
+.stSelectbox > div > div {
+    background: #0e1a2e !important;
+    border: 1px solid rgba(0,210,200,0.2) !important;
+    color: #c8d8f0 !important;
+    border-radius: 8px !important;
+}
+.stToggle > label { color: #7ab8d4 !important; }
+
+/* ── Main header ── */
+.main-header {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #0a1628 0%, #0d1f3c 50%, #091520 100%);
+    border: 1px solid rgba(0,210,200,0.2);
+    border-radius: 16px;
+    padding: 2.5rem 3rem;
+    margin-bottom: 2rem;
+}
+.main-header::before {
+    content: '';
+    position: absolute; top: -60px; right: -60px;
+    width: 300px; height: 300px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,210,200,0.12) 0%, transparent 70%);
+    pointer-events: none;
+}
+.main-header::after {
+    content: '';
+    position: absolute; bottom: -80px; left: 30%;
+    width: 250px; height: 250px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,102,255,0.08) 0%, transparent 70%);
+    pointer-events: none;
+}
+.header-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem; font-weight: 500;
+    color: #00d2c8; letter-spacing: 0.14em;
+    text-transform: uppercase; margin-bottom: 0.8rem;
+    display: flex; align-items: center; gap: 8px;
+}
+.header-tag::before {
+    content: '';
+    display: inline-block; width: 20px; height: 1px;
+    background: #00d2c8;
+}
+.header-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.8rem; font-weight: 800;
+    color: #e8f4ff; line-height: 1.1;
+    margin-bottom: 0.5rem;
+}
+.header-title span { color: #00d2c8; }
+.header-sub {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem; color: #4a7fa5;
+    margin-bottom: 1.5rem;
+}
+.badge-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.hbadge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem; font-weight: 500;
+    padding: 4px 12px; border-radius: 20px;
+    border: 1px solid rgba(0,210,200,0.3);
+    color: #00d2c8;
+    background: rgba(0,210,200,0.08);
+    letter-spacing: 0.04em;
+}
+
+/* ── Search area ── */
+.search-wrap {
+    background: #0c1528;
+    border: 1px solid rgba(0,210,200,0.15);
+    border-radius: 12px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.stTextArea textarea {
+    background: #080d1a !important;
+    border: 1px solid rgba(0,210,200,0.2) !important;
+    border-radius: 8px !important;
+    color: #c8d8f0 !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.9rem !important;
+    caret-color: #00d2c8 !important;
+}
+.stTextArea textarea:focus {
+    border-color: rgba(0,210,200,0.5) !important;
+    box-shadow: 0 0 0 3px rgba(0,210,200,0.08) !important;
+}
+.stTextArea textarea::placeholder { color: #2a4a6a !important; }
+
+/* ── Search button ── */
+.search-btn > div > button, .search-btn button {
+    background: linear-gradient(135deg, #00d2c8, #0066ff) !important;
+    color: #080d1a !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-family: 'Syne', sans-serif !important;
+    font-size: 0.85rem !important;
+    font-weight: 700 !important;
+    padding: 0.7rem 1.5rem !important;
+    width: 100% !important;
+    letter-spacing: 0.04em !important;
+    transition: all 0.2s ease !important;
+}
+.search-btn > div > button:hover, .search-btn button:hover {
+    opacity: 0.9 !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 4px 15px rgba(26,110,189,0.35) !important;
+    box-shadow: 0 6px 20px rgba(0,210,200,0.3) !important;
 }
-.result-card {
-    background: #ffffff; border: 1px solid #b8daf2;
-    border-radius: 10px; padding: 1.2rem 1.5rem; margin-bottom: 1rem;
-    box-shadow: 0 1px 4px rgba(26,110,189,0.08);
+
+/* ── Section headers ── */
+.section-head {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.8rem; font-weight: 700;
+    color: #4a7fa5; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+    display: flex; align-items: center; gap: 8px;
 }
-.result-card.repair { border-left: 3px solid #e67e22; }
-.result-card.manual { border-left: 3px solid #7c4dff; }
-.result-title     { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: #4a7fa5; margin-bottom: 0.5rem; }
-.result-equipment { font-size: 1rem; font-weight: 600; color: #1e3a5f; margin-bottom: 0.4rem; }
-.result-content   { font-size: 0.85rem; color: #4a7fa5; line-height: 1.5; }
-.score-badge { float: right; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
-.score-high  { background: rgba(22,160,133,0.15);  color: #16a085; }
-.score-mid   { background: rgba(230,126,34,0.15);  color: #e67e22; }
-.score-low   { background: rgba(74,127,165,0.12);  color: #4a7fa5; }
-.ai-response {
-    background: #ffffff; border: 1px solid #90c4e8; border-radius: 10px;
-    padding: 1.5rem; margin-top: 1rem; font-size: 0.9rem; line-height: 1.8;
-    color: #1e3a5f; white-space: pre-wrap;
-    box-shadow: 0 2px 8px rgba(26,110,189,0.08);
+.section-head::after {
+    content: ''; flex: 1;
+    height: 1px; background: rgba(0,210,200,0.1);
 }
-.metric-box  { background: #ffffff; border: 1px solid #b8daf2; border-radius: 8px; padding: 1rem; text-align: center; }
-.metric-value{ font-family: 'IBM Plex Mono', monospace; font-size: 1.8rem; font-weight: 600; color: #1a6ebd; }
-.metric-label{ font-size: 0.75rem; color: #4a7fa5; margin-top: 0.2rem; }
-hr { border-color: #b8daf2 !important; }
+
+/* ── Result cards ── */
+.rcard {
+    background: #0c1528;
+    border: 1px solid rgba(0,210,200,0.1);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+    position: relative;
+}
+.rcard:hover {
+    border-color: rgba(0,210,200,0.3);
+    transform: translateX(2px);
+}
+.rcard.repair { border-left: 3px solid #ff7a45; }
+.rcard.manual { border-left: 3px solid #00d2c8; }
+
+.rcard-header {
+    display: flex; justify-content: space-between;
+    align-items: flex-start; margin-bottom: 0.4rem;
+}
+.rcard-source {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: #4a7fa5;
+    text-transform: uppercase; letter-spacing: 0.06em;
+}
+.rcard-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; font-weight: 500;
+    padding: 2px 8px; border-radius: 4px;
+    flex-shrink: 0;
+}
+.score-high { background: rgba(0,210,200,0.12); color: #00d2c8; }
+.score-mid  { background: rgba(255,180,50,0.12); color: #ffb432; }
+.score-low  { background: rgba(120,150,200,0.1); color: #6a9ab8; }
+
+.rcard-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.92rem; font-weight: 600;
+    color: #c8e8ff; margin-bottom: 0.4rem;
+    line-height: 1.3;
+}
+.rcard-body {
+    font-size: 0.8rem; color: #4a7fa5;
+    line-height: 1.5;
+}
+.rcard-body b { color: #7ab8d4; font-weight: 500; }
+
+/* ── AI response panel ── */
+.ai-panel {
+    background: #0c1528;
+    border: 1px solid rgba(0,210,200,0.15);
+    border-radius: 12px;
+    padding: 1.5rem;
+    height: 100%;
+}
+.ai-panel-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid rgba(0,210,200,0.1);
+}
+.ai-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #00d2c8;
+    box-shadow: 0 0 8px #00d2c8;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.6; transform: scale(0.85); }
+}
+.ai-model-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem; color: #4a7fa5;
+}
+.ai-model-tag span { color: #00d2c8; }
+.ai-body {
+    font-size: 0.85rem; line-height: 1.75;
+    color: #a8c8e8; white-space: pre-wrap;
+}
+
+/* ── Download button ── */
+.stDownloadButton > button {
+    background: transparent !important;
+    border: 1px solid rgba(0,210,200,0.25) !important;
+    color: #00d2c8 !important;
+    border-radius: 6px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.72rem !important;
+    padding: 0.4rem 1rem !important;
+    margin-top: 1rem !important;
+    transition: all 0.2s ease !important;
+}
+.stDownloadButton > button:hover {
+    background: rgba(0,210,200,0.08) !important;
+    border-color: rgba(0,210,200,0.5) !important;
+}
+
+/* ── Warning / info ── */
+.stWarning { background: rgba(255,180,50,0.08) !important; border-color: rgba(255,180,50,0.3) !important; }
+.stInfo    { background: rgba(0,210,200,0.06) !important; border-color: rgba(0,210,200,0.2) !important; }
+
+/* ── Spinner ── */
+.stSpinner > div { border-top-color: #00d2c8 !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #080d1a; }
+::-webkit-scrollbar-thumb { background: rgba(0,210,200,0.2); border-radius: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Secrets & constants ────────────────────────────────────────
+# ── Secrets & constants ─────────────────────────────────────────
 QDRANT_URL      = st.secrets["QDRANT_URL"]
 QDRANT_API_KEY  = st.secrets["QDRANT_API_KEY"]
 GROQ_API_KEY    = st.secrets["GROQ_API_KEY"]
 COLLECTION_NAME = "nic_medsearch"
-
-# MUST match embed_and_index.py exactly.
-# all-MiniLM-L6-v2: 384-dim, 5x faster than BGE/mpnet, no query prefix needed.
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 RERANKER_MODEL  = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 LLM_MODEL       = "llama-3.3-70b-versatile"
 SCORE_THRESHOLD = 0.45
-FETCH_K         = 10   # candidates to retrieve before reranking
+FETCH_K         = 10
 
 
-# ── Load models ───────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading models & connections…")
+# ── Load models ─────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Initialising models…")
 def load_models():
     embedder = SentenceTransformer(EMBEDDING_MODEL)
     reranker = CrossEncoder(RERANKER_MODEL)
@@ -120,67 +383,44 @@ def load_models():
 
 embedder, reranker, qdrant, groq_client = load_models()
 
+qdrant_ok = groq_ok = False
 try:
-    qdrant.get_collections()
-    st.sidebar.success("Qdrant OK ✅")
+    qdrant.get_collections(); qdrant_ok = True
+except: pass
+try:
     groq_client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": "say ok"}],
-        max_tokens=5,
-    )
-    st.sidebar.success("Groq OK ✅")
-except Exception as e:
-    st.sidebar.error(f"Connection error: {str(e)}")
-    st.stop()
+        model=LLM_MODEL, messages=[{"role":"user","content":"ok"}], max_tokens=3)
+    groq_ok = True
+except: pass
+
+if not qdrant_ok or not groq_ok:
+    st.error("Connection failed — check secrets."); st.stop()
 
 
-# ── RAG functions ─────────────────────────────────────────────
-
+# ── RAG functions ───────────────────────────────────────────────
 def search_similar(query: str, fetch_k: int, doc_filter: str) -> list:
     from qdrant_client.models import Filter, FieldCondition, MatchValue
-
-    # MiniLM: no instruction prefix, encode query as plain text
-    query_vector = embedder.encode(
-        query.strip(),
-        normalize_embeddings=True,
-    ).tolist()
-
+    query_vector = embedder.encode(query.strip(), normalize_embeddings=True).tolist()
     search_filter = None
     if doc_filter == "Repair Records Only":
-        search_filter = Filter(must=[
-            FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))
-        ])
+        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="repair_record"))])
     elif doc_filter == "Manuals Only":
-        search_filter = Filter(must=[
-            FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))
-        ])
-
-    # Attempt 1: with score threshold
+        search_filter = Filter(must=[FieldCondition(key="doc_type", match=MatchValue(value="manual_section"))])
     results = qdrant.query_points(
-        collection_name=COLLECTION_NAME,
-        query=query_vector,
-        query_filter=search_filter,
-        limit=fetch_k,
-        with_payload=True,
-        score_threshold=SCORE_THRESHOLD,
+        collection_name=COLLECTION_NAME, query=query_vector,
+        query_filter=search_filter, limit=fetch_k,
+        with_payload=True, score_threshold=SCORE_THRESHOLD,
     ).points
-
-    # Attempt 2: no threshold fallback
     if not results:
         results = qdrant.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            query_filter=search_filter,
-            limit=fetch_k,
-            with_payload=True,
+            collection_name=COLLECTION_NAME, query=query_vector,
+            query_filter=search_filter, limit=fetch_k, with_payload=True,
         ).points
-
     return results
 
 
 def rerank_results(query: str, results: list, top_n: int) -> list:
-    if not results:
-        return results
+    if not results: return results
     pairs  = [(query, r.payload.get("content", "")) for r in results]
     scores = reranker.predict(pairs, show_progress_bar=False)
     ranked = sorted(zip(scores, results), key=lambda x: x[0], reverse=True)
@@ -190,308 +430,311 @@ def rerank_results(query: str, results: list, top_n: int) -> list:
 def build_context(results: list) -> str:
     parts = []
     for i, r in enumerate(results):
-        p        = r.payload
-        doc_type = p.get("doc_type", "repair_record")
-
-        if doc_type in ("manual_section", "manual_sub_section"):
+        p = r.payload
+        if p.get("doc_type") in ("manual_section", "manual_sub_section"):
             parts.append(
                 f"Manual Section {i+1} (Score: {r.score:.2%}):\n"
-                f"  Source  : {p.get('source_file', 'N/A')}\n"
-                f"  Title   : {p.get('title', 'N/A')}\n"
-                f"  Content : {str(p.get('content', ''))[:400]}\n"
+                f"  Source: {p.get('source_file','N/A')}\n"
+                f"  Title: {p.get('title','N/A')}\n"
+                f"  Content: {str(p.get('content',''))[:500]}\n"
             )
         else:
             parts.append(
                 f"Repair Record {i+1} (Score: {r.score:.2%}):\n"
-                f"  Equipment   : {p.get('equipment_name', 'N/A')}\n"
-                f"  Manufacturer: {p.get('manufacturer', 'N/A')}\n"
-                f"  Model       : {p.get('model', 'N/A')}\n"
-                f"  Hospital    : {p.get('hospital', 'N/A')}\n"
-                f"  Problem     : {str(p.get('fault_description', ''))[:200]}\n"
-                f"  Diagnosis   : {str(p.get('initial_diagnosis', ''))[:200]}\n"
-                f"  Work Done   : {str(p.get('action_taken', ''))[:200]}\n"
+                f"  Equipment: {p.get('equipment_name','N/A')}\n"
+                f"  Manufacturer: {p.get('manufacturer','N/A')}\n"
+                f"  Hospital: {p.get('hospital','N/A')}\n"
+                f"  Problem: {str(p.get('fault_description',''))[:200]}\n"
+                f"  Diagnosis: {str(p.get('initial_diagnosis',''))[:200]}\n"
+                f"  Work Done: {str(p.get('action_taken',''))[:200]}\n"
             )
     return "\n".join(parts)
 
 
 def ask_groq(query: str, context: str, doc_filter: str = "All Sources") -> str:
-    spec_keywords   = ["specification", "spec", "technical", "requirement",
-                       "voltage", "power", "weight", "dimension", "frequency",
-                       "quantity", "install"]
-    manual_keywords = ["manual", "service", "procedure", "how to", "steps",
-                       "removing", "replace", "disassemble", "assemble",
-                       "calibration", "maintenance", "repair guide", "leak test"]
-
-    is_spec_query   = any(w in query.lower() for w in spec_keywords)
-    is_manual_query = any(w in query.lower() for w in manual_keywords)
-
-    # ── Source-aware prompt selection ──────────────────────────
-    # If user selected a filter, enforce that source type in the prompt.
-    # If "All Sources", fall back to query-keyword detection.
+    spec_kw   = ["specification","spec","technical","requirement","voltage",
+                 "power","weight","dimension","frequency","quantity","install"]
+    manual_kw = ["manual","service","procedure","how to","steps","removing",
+                 "replace","disassemble","assemble","calibration","maintenance",
+                 "repair guide","leak test"]
+    is_spec   = any(w in query.lower() for w in spec_kw)
+    is_manual = any(w in query.lower() for w in manual_kw)
 
     if doc_filter == "Manuals Only":
         prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
-You are answering based STRICTLY on service manual sections. No repair records are available.
+Answer based STRICTLY on the manual sections below.
 
 RETRIEVED MANUAL SECTIONS:
 {context}
 
 QUERY: {query}
 
-IMPORTANT — How to judge relevance:
-- Judge relevance by the CONTENT of each section, NOT by the PDF filename.
-- A section is relevant if its content describes the device or procedure in the query,
-  even if the PDF filename belongs to a different product line.
-- Example: a section about "Sony RGB printer setup" inside an Esaote PDF is still
-  valid for a query about Sony printer configuration — use it.
+IMPORTANT: Judge relevance by CONTENT, not by PDF filename. A section about a device
+inside another product's PDF is still valid if the content matches the query.
 
 Instructions:
-- Use any section whose CONTENT is relevant to the query.
-- Provide complete numbered step-by-step instructions exactly as written in the manual.
+- Use any section whose content is relevant.
+- Provide complete numbered step-by-step instructions as written in the manual.
 - Include all warnings, safety notes, tools, and parts mentioned.
-- If you use a section from a multi-device manual, note which device that section applies to.
-- Only say "not found" if NO section content addresses the query at all.
+- Only say "not found" if NO section content addresses the query.
 - State your confidence: HIGH / MEDIUM / LOW"""
 
     elif doc_filter == "Repair Records Only":
         prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
-You are answering based STRICTLY on past repair records. No manual sections are available.
+Answer based STRICTLY on past repair records below.
 
 PAST REPAIR RECORDS:
 {context}
 
 CURRENT PROBLEM: {query}
 
-Provide a structured response:
-1. Most similar past cases and what resolved them (reference specific records)
-2. Most likely root cause based on the repair evidence
-3. Recommended step-by-step action based on past fixes
+1. Most similar past cases and what resolved them
+2. Most likely root cause
+3. Recommended step-by-step action
 4. Parts or tools likely needed
 5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
 
-If records are for a different device, note that clearly before giving advice.
-If no records are relevant, say so instead of guessing."""
+If records are for a different device, note that clearly. If not relevant, say so."""
 
-    elif is_spec_query:
+    elif is_spec:
         prompt = f"""You are a medical equipment procurement expert for hospitals in Nepal.
-Based ONLY on the records below (manuals and repair records), answer the specification query.
+Based ONLY on the records below, answer this specification query.
 
 RETRIEVED RECORDS:
 {context}
 
 QUERY: {query}
 
-Instructions:
-- Summarize only the key specifications relevant to the query.
-- Be specific and factual. Use numbers and units where available.
+- Be specific and factual. Use numbers and units.
 - If not found, say: "This information was not found in the available records."
-- Do NOT invent or estimate any values not in the records."""
+- Do NOT invent values."""
 
-    elif is_manual_query:
+    elif is_manual:
         prompt = f"""You are a certified medical equipment service engineer for hospitals in Nepal.
-Based ONLY on the sources retrieved below (manuals and repair records), answer the query.
+Based ONLY on the sources below, answer this query.
 
 RETRIEVED SOURCES:
 {context}
 
 QUERY: {query}
 
-Instructions:
 - Use ONLY information from the sources above.
-- If a source is from a different device than asked about, clearly state that first.
-- Provide complete numbered, step-by-step instructions where applicable.
-- Include tools, parts, or safety precautions mentioned in the sources.
-- If not covered, say: "The retrieved sources do not contain this procedure."
+- If a source is from a different device, state that first.
+- Provide complete numbered step-by-step instructions.
+- Include tools, parts, or safety precautions.
 - State your confidence: HIGH / MEDIUM / LOW"""
 
     else:
         prompt = f"""You are a senior medical equipment maintenance engineer for hospitals in Nepal.
-Use both manual sections and past repair records below to diagnose and resolve this problem.
+Use the sources below to diagnose and resolve this problem.
 
 RETRIEVED SOURCES (manuals + repair records):
 {context}
 
 CURRENT PROBLEM: {query}
 
-Provide a structured response:
 1. Most similar past cases and relevant manual guidance
-2. Most likely root cause based on the evidence
+2. Most likely root cause
 3. Recommended step-by-step action
 4. Parts or tools likely needed
 5. Urgency: CRITICAL / HIGH / MEDIUM / LOW
 
-If sources are for a different device, note that clearly.
-If sources are not relevant, say so instead of guessing."""
+If sources are for a different device, note that clearly."""
 
-    response = groq_client.chat.completions.create(
+    resp = groq_client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=900,
-        temperature=0.05,
+        max_tokens=900, temperature=0.05,
     )
-    return response.choices[0].message.content
+    return resp.choices[0].message.content
 
 
-def get_score_class(score):
-    if score >= 0.65: return "score-high"
-    if score >= 0.50: return "score-mid"
-    return "score-low"
-
-def get_card_class(doc_type):
-    return "repair" if "repair" in doc_type else "manual"
+def score_class(s):
+    return "score-high" if s >= 0.65 else ("score-mid" if s >= 0.50 else "score-low")
 
 
-# ── Sidebar ───────────────────────────────────────────────────
+# ── Sidebar ─────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
-    <div style='padding:1rem 0'>
-        <div style='font-family:IBM Plex Mono,monospace;font-size:1.1rem;color:#1a6ebd;font-weight:600;'>NIC MedSearch</div>
-        <div style='color:#4a7fa5;font-size:0.8rem;margin-top:4px;'>Medical Equipment IR System</div>
+    <div class='sb-logo'>
+        <div class='sb-logo-icon'>⚕️</div>
+        <div>
+            <div class='sb-logo-text'>NIC MedSearch</div>
+            <div class='sb-logo-sub'>Equipment IR System · v2.0</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("**⚙️ Search Settings**")
-    top_k      = st.slider("Results to show", 3, 10, 5)
-    doc_filter = st.selectbox("Filter by source",
-        ["All Sources", "Repair Records Only", "Manuals Only"])
-    enable_ai  = st.toggle("🤖 Enable AI Response", value=True)
+    # System status
+    st.markdown("<div class='sb-section'>System Status</div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='status-pill'>
+        <div class='dot {"" if qdrant_ok else "err"}'></div>
+        <span><strong>Qdrant Cloud</strong> — {"connected" if qdrant_ok else "error"}</span>
+    </div>
+    <div class='status-pill'>
+        <div class='dot {"" if groq_ok else "err"}'></div>
+        <span><strong>Groq API</strong> — {"ready" if groq_ok else "error"}</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("**📊 System Status**")
+    # Record count
     try:
         info  = qdrant.get_collection(COLLECTION_NAME)
         total = info.points_count
         st.markdown(f"""
-        <div class='metric-box'>
-            <div class='metric-value'>{total:,}</div>
-            <div class='metric-label'>Records Indexed</div>
-        </div>""", unsafe_allow_html=True)
-        st.success("Qdrant Cloud Connected ✅")
-        st.success("Groq API Ready ✅")
-    except:
-        st.error("Connection Error ❌")
+        <div class='metric-tile'>
+            <div class='val'>{total:,}</div>
+            <div class='lbl'>Records Indexed</div>
+        </div>
+        """, unsafe_allow_html=True)
+    except: pass
 
-    st.markdown("---")
-    st.markdown("**💡 Example Queries**")
+    # Search settings
+    st.markdown("<div class='sb-section'>Search Settings</div>", unsafe_allow_html=True)
+    top_k      = st.slider("Results to show", 3, 10, 5)
+    doc_filter = st.selectbox("Filter by source",
+        ["All Sources", "Repair Records Only", "Manuals Only"])
+    enable_ai  = st.toggle("Enable AI Response", value=True)
+
+    # Examples
+    st.markdown("<div class='sb-section'>Example Queries</div>", unsafe_allow_html=True)
     examples = [
-        "microscope lens not clear",
         "ventilator leak test failed",
-        "ECG machine service procedure",
+        "ECG machine calibration steps",
         "defibrillator not charging",
-        "removing the keyboard table T2",
+        "microscope lens not clear",
+        "auxiliary AC outlet no voltage",
+        "monoblock assembly replacement",
     ]
     for ex in examples:
         if st.button(ex, key=ex):
             st.session_state.query = ex
 
 
-# ── Main area ─────────────────────────────────────────────────
+# ── Main area ────────────────────────────────────────────────────
 st.markdown("""
 <div class='main-header'>
-    <h1>🏥 NIC MedSearch</h1>
-    <p>Hospital Equipment Intelligence & Retrieval System</p>
-    <br/>
-    <span class='badge'>RAG</span>
-    <span class='badge'>MiniLM + CrossEncoder</span>
-    <span class='badge'>Groq LLM</span>
-    <span class='badge'>Qdrant Cloud</span>
+    <div class='header-tag'>Hospital Equipment Intelligence</div>
+    <div class='header-title'>NIC <span>MedSearch</span></div>
+    <div class='header-sub'>Retrieval-Augmented Generation for medical equipment maintenance & repair</div>
+    <div class='badge-row'>
+        <span class='hbadge'>RAG Pipeline</span>
+        <span class='hbadge'>MiniLM + CrossEncoder</span>
+        <span class='hbadge'>Groq LLM</span>
+        <span class='hbadge'>Qdrant Cloud</span>
+        <span class='hbadge'>5,607 Records</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-col1, col2 = st.columns([5, 1])
-with col1:
+# Search bar
+c1, c2 = st.columns([5, 1])
+with c1:
     query = st.text_area(
-        "Query",
+        "q", label_visibility="collapsed",
         value=st.session_state.get("query", ""),
-        height=100,
-        placeholder="e.g. 'ventilator alarm not stopping' or 'ECG calibration steps'",
-        label_visibility="collapsed"
+        height=90,
+        placeholder="Describe the fault or procedure — e.g. 'ventilator alarm not stopping after power cycle'"
     )
-with col2:
-    st.markdown("<br/>", unsafe_allow_html=True)
-    search_clicked = st.button("🔍 Search", use_container_width=True)
+with c2:
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='search-btn'>", unsafe_allow_html=True)
+        search_clicked = st.button("⌕  Search", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Search & results ──────────────────────────────────────────
+# ── Results ──────────────────────────────────────────────────────
 if search_clicked and query.strip():
-
     with st.spinner(f"Retrieving {FETCH_K} candidates …"):
         candidates = search_similar(query, FETCH_K, doc_filter)
 
     if not candidates:
         st.warning("No results found. Try rephrasing your query.")
     else:
-        with st.spinner(f"Reranking {len(candidates)} candidates …"):
+        with st.spinner("Reranking with cross-encoder …"):
             results = rerank_results(query, candidates, top_n=top_k)
 
-        col_results, col_ai = st.columns([1, 1])
+        col_r, col_ai = st.columns([1, 1], gap="large")
 
-        with col_results:
-            st.markdown(f"**📋 Top {len(results)} Results** (after reranking)")
-            st.markdown("---")
+        with col_r:
+            st.markdown(
+                f"<div class='section-head'>Top {len(results)} Results&nbsp;&nbsp;after reranking</div>",
+                unsafe_allow_html=True
+            )
             for r in results:
-                p        = r.payload
-                doc_type = p.get("doc_type", "repair_record")
-                cc       = get_card_class(doc_type)
-                sc       = get_score_class(r.score)
+                p  = r.payload
+                dt = p.get("doc_type", "repair_record")
+                cc = "repair" if "repair" in dt else "manual"
+                sc = score_class(r.score)
 
-                if "repair" in doc_type:
-                    icon, title = "🔧", f"REPAIR — {p.get('hospital','N/A')}"
-                    main_text   = p.get("equipment_name", "N/A")
-                    detail      = f"Problem: {str(p.get('fault_description',''))[:150]}"
-                    detail2     = f"Work Done: {str(p.get('action_taken',''))[:150]}"
+                if "repair" in dt:
+                    source  = f"🔧 REPAIR — {p.get('hospital','N/A')}"
+                    title   = p.get("equipment_name", "Unknown Equipment")
+                    body    = (f"<b>Problem:</b> {str(p.get('fault_description',''))[:140]}<br>"
+                               f"<b>Work Done:</b> {str(p.get('action_taken',''))[:140]}")
                 else:
-                    icon, title = "📘", f"MANUAL — {p.get('source_file','N/A')}"
-                    main_text   = p.get("title", "Manual Section")
-                    detail      = str(p.get("content",""))[:250]
-                    detail2     = ""
+                    source  = f"📘 MANUAL — {p.get('source_file','N/A')}"
+                    title   = p.get("title", "Manual Section")
+                    body    = str(p.get("content",""))[:220]
 
                 st.markdown(f"""
-                <div class='result-card {cc}'>
-                    <div class='result-title'>{icon} {title}
-                        <span class='score-badge {sc}'>{r.score:.0%}</span>
+                <div class='rcard {cc}'>
+                    <div class='rcard-header'>
+                        <div class='rcard-source'>{source}</div>
+                        <div class='rcard-score {sc}'>{r.score:.0%}</div>
                     </div>
-                    <div class='result-equipment'>{main_text}</div>
-                    <div class='result-content'>{detail}</div>
-                    {'<div class="result-content" style="margin-top:4px">' + detail2 + '</div>' if detail2 else ''}
+                    <div class='rcard-title'>{title}</div>
+                    <div class='rcard-body'>{body}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
         with col_ai:
+            st.markdown(
+                "<div class='section-head'>AI Recommendation</div>",
+                unsafe_allow_html=True
+            )
             if enable_ai:
-                st.markdown("**🤖 AI Recommendation**")
-                st.markdown("---")
-                with st.spinner("Generating response…"):
+                with st.spinner("Generating response …"):
                     context = build_context(results)
                     answer  = ask_groq(query, context, doc_filter)
 
                 st.markdown(f"""
-                <div class='ai-response'>
-                    <div style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;color:#1a6ebd;margin-bottom:0.5rem;'>
-                        ⚡ {LLM_MODEL} via Groq
+                <div class='ai-panel'>
+                    <div class='ai-panel-header'>
+                        <div class='ai-dot'></div>
+                        <div class='ai-model-tag'>
+                            <span>{LLM_MODEL}</span> via Groq &nbsp;·&nbsp;
+                            MiniLM + CrossEncoder
+                        </div>
                     </div>
-                    <div style='margin-bottom:1rem;'>
-                        <span class='badge' style='background:rgba(26,110,189,0.15);border-color:rgba(26,110,189,0.4);color:#1a6ebd;'>MiniLM + CrossEncoder</span>
-                    </div>
-                    {answer}
+                    <div class='ai-body'>{answer}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
                 st.download_button(
-                    "⬇️ Download Report",
+                    "↓  Download Report",
                     data=f"QUERY: {query}\n\nAI RECOMMENDATION:\n{answer}",
                     file_name="medsearch_report.txt",
-                    mime="text/plain"
+                    mime="text/plain",
                 )
             else:
-                st.info("AI response disabled. Toggle it on in the sidebar.")
+                st.markdown("""
+                <div class='ai-panel' style='display:flex;align-items:center;justify-content:center;min-height:200px;'>
+                    <div style='text-align:center;color:#2a4a6a;font-family:JetBrains Mono,monospace;font-size:0.8rem;'>
+                        AI response disabled<br>Toggle in sidebar to enable
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
 elif search_clicked:
     st.warning("Please enter a query.")
 
-st.markdown("---")
+# Footer
 st.markdown("""
-<div style='text-align:center;color:#4a7fa5;font-size:0.8rem;font-family:IBM Plex Mono,monospace;'>
-    NIC MedSearch · MiniLM + CrossEncoder · Qdrant Cloud + Groq
+<div style='margin-top:3rem;padding-top:1.5rem;border-top:1px solid rgba(0,210,200,0.08);
+     text-align:center;font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#1a3050;
+     letter-spacing:0.08em;text-transform:uppercase;'>
+    NIC MedSearch &nbsp;·&nbsp; MiniLM + CrossEncoder &nbsp;·&nbsp; Qdrant Cloud + Groq
 </div>
 """, unsafe_allow_html=True)
