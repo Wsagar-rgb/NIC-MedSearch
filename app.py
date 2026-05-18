@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# app.py — NIC MedSearch Streamlit UI
+# app.py — Mistri Streamlit UI
 # UI: Dark clinical theme — deep navy + electric teal accents
 #     Syne + JetBrains Mono fonts, glassmorphism cards,
 #     animated header, clean sidebar with status indicators
@@ -11,8 +11,8 @@ from qdrant_client import QdrantClient
 from groq import Groq
 
 st.set_page_config(
-    page_title="NIC MedSearch",
-    page_icon="⚕️",
+    page_title="Mistri",
+    page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -439,8 +439,8 @@ def score_class(s):
 # Logo / wordmark — centered like Google
 st.markdown("""
 <div class='g-logo'>
-    <div class='g-logo-text'><span class='c1'>N</span><span class='c2'>I</span><span class='c3'>C</span> <span class='c4'>M</span><span class='c5'>e</span><span class='c6'>d</span><span class='cn'>Search</span></div>
-    <div class='g-logo-sub'>Hospital Equipment Intelligence & Retrieval</div>
+    <div class='g-logo-text'><span class='c1'>M</span><span class='c2'>i</span><span class='c3'>s</span><span class='c4'>t</span><span class='c5'>r</span><span class='c6'>i</span></div>
+    <div class='g-logo-sub'>Biomedical Equipment Intelligence for Engineers</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -545,6 +545,6 @@ elif search_clicked:
 st.markdown("""
 <div style='margin-top:4rem;padding-top:1.5rem;border-top:1px solid #ebebeb;
      text-align:center;font-size:0.75rem;color:#9aa0a6;'>
-    NIC MedSearch &nbsp;·&nbsp; Qdrant Cloud · Groq · MiniLM
+    Mistri &nbsp;·&nbsp; Qdrant Cloud · Groq · MiniLM
 </div>
 """, unsafe_allow_html=True)
