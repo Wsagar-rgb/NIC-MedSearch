@@ -52,12 +52,18 @@ section[data-testid="stSidebar"] { display: none !important; }
 .g-logo-text {
     font-family: 'Inter', sans-serif;
     font-size: 3.2rem; font-weight: 600;
-    color: #202124; letter-spacing: -0.5px;
-    line-height: 1;
+    letter-spacing: -0.5px; line-height: 1;
 }
-.g-logo-text span { color: #1a73e8; }
+/* Google-style multi-color letters */
+.g-logo-text .c1 { color: #4285f4; } /* Blue  — N */
+.g-logo-text .c2 { color: #ea4335; } /* Red   — I */
+.g-logo-text .c3 { color: #fbbc05; } /* Yellow— C */
+.g-logo-text .c4 { color: #4285f4; } /* Blue  — M */
+.g-logo-text .c5 { color: #34a853; } /* Green — e */
+.g-logo-text .c6 { color: #ea4335; } /* Red   — d */
+.g-logo-text .cn { color: #202124; } /* Black — rest of "Search" */
 .g-logo-sub {
-    font-size: 0.82rem; color: #9aa0a6;
+    font-size: 0.82rem; color: #202124;
     margin-top: 6px; letter-spacing: 0.01em;
 }
 
@@ -168,7 +174,7 @@ section[data-testid="stSidebar"] { display: none !important; }
 }
 .rcard-title:hover { text-decoration: underline; color: #1a0dab; }
 .rcard-body {
-    font-size: 0.85rem; color: #4d5156; line-height: 1.55;
+    font-size: 0.85rem; color: #202124; line-height: 1.55;
 }
 .rcard-body b { color: #202124; font-weight: 500; }
 
@@ -197,12 +203,12 @@ section[data-testid="stSidebar"] { display: none !important; }
 .ai-model-tag span { color: #5f6368; }
 .ai-body {
     font-size: 0.87rem; line-height: 1.75;
-    color: #3c4043; white-space: pre-wrap;
+    color: #202124; white-space: pre-wrap;
 }
 
 /* ── Section head ── */
 .section-head {
-    font-size: 0.78rem; color: #9aa0a6;
+    font-size: 0.78rem; color: #202124;
     letter-spacing: 0.02em; margin-bottom: 0.5rem;
 }
 
@@ -433,7 +439,7 @@ def score_class(s):
 # Logo / wordmark — centered like Google
 st.markdown("""
 <div class='g-logo'>
-    <div class='g-logo-text'>NIC <span>Med</span>Search</div>
+    <div class='g-logo-text'><span class='c1'>N</span><span class='c2'>I</span><span class='c3'>C</span> <span class='c4'>M</span><span class='c5'>e</span><span class='c6'>d</span><span class='cn'>Search</span></div>
     <div class='g-logo-sub'>Hospital Equipment Intelligence & Retrieval</div>
 </div>
 """, unsafe_allow_html=True)
