@@ -440,7 +440,7 @@ def score_class(s):
 st.markdown("""
 <div class='g-logo'>
     <div class='g-logo-text'><span class='c1'>M</span><span class='c2'>i</span><span class='c3'>s</span><span class='c4'>t</span><span class='c5'>r</span><span class='c6'>i</span></div>
-    <div class='g-logo-sub'>Biomedical Equipment Intelligence for Engineers</div>
+    <div class='g-logo-sub'>RAG Model for Biomedical Engineers</div>
 </div>
 """, unsafe_allow_html=True)
 
