@@ -19,330 +19,217 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600&family=Roboto:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
 
 /*
- * PALETTE — Light & Clean
- * Background : #f8fafc  (off-white — easier on eyes than pure white)
- * Surface    : #ffffff  (cards, panels)
- * Surface 2  : #f1f5f9  (sidebar, secondary areas)
- * Border     : #e2e8f0  (all borders)
- * Accent     : #2563eb  (sharp blue — primary actions, links)
- * Accent2    : #0ea5e9  (sky blue — highlights)
- * Text       : #0f172a  (near-black — max contrast)
- * Text muted : #64748b  (slate-500 — secondary text)
- * Text dim   : #94a3b8  (slate-400 — placeholders, labels)
- * Success    : #10b981  (green)
- * Error      : #ef4444  (red)
- * Repair     : #f97316  (orange)
- * Manual     : #2563eb  (blue)
+ * Google Search inspired — minimal, white, lots of breathing room
+ * One accent color (Google blue), everything else neutral
  */
 
 *, *::before, *::after { box-sizing: border-box; }
-html, body, .stApp { font-family: 'Plus Jakarta Sans', sans-serif; }
+html, body, .stApp { font-family: 'Inter', 'Roboto', sans-serif; }
 
-.stApp {
-    background: #f8fafc;
-    color: #0f172a;
-}
+/* App — clean white */
+.stApp { background: #ffffff; color: #202124; }
 
-/* ── Sidebar ── */
-section[data-testid="stSidebar"] {
-    background: #ffffff !important;
-    border-right: 1px solid #e2e8f0 !important;
-}
-section[data-testid="stSidebar"] > div { padding: 1.5rem 1.2rem !important; }
+/* Hide sidebar entirely — settings moved to main page */
+section[data-testid="stSidebar"] { display: none !important; }
 
-/* ── Sidebar logo ── */
-.sb-logo {
-    display: flex; align-items: center; gap: 10px;
-    padding: 0.5rem 0 1.5rem 0;
-    border-bottom: 1px solid #e2e8f0;
-    margin-bottom: 1.5rem;
-}
-.sb-logo-icon {
-    width: 36px; height: 36px; border-radius: 8px;
-    background: #2563eb;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; flex-shrink: 0;
-}
-.sb-logo-text { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.95rem; color: #0f172a; }
-.sb-logo-sub  { font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; color: #94a3b8; margin-top: 2px; }
-
-/* ── Sidebar section labels ── */
-.sb-section {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem; font-weight: 500;
-    color: #94a3b8; letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin: 1.5rem 0 0.7rem 0;
+/* Hide Streamlit chrome */
+#MainMenu, footer, header { visibility: hidden !important; }
+.block-container {
+    max-width: 760px !important;
+    padding: 0 1.5rem !important;
+    margin: 0 auto !important;
 }
 
-/* ── Status pill ── */
-.status-pill {
-    display: flex; align-items: center; gap: 8px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px; padding: 0.45rem 0.75rem;
-    margin-bottom: 0.4rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem; color: #64748b;
+/* ── Logo / wordmark ── */
+.g-logo {
+    text-align: center;
+    padding: 5rem 0 1.5rem 0;
 }
-.status-pill .dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: #10b981; flex-shrink: 0;
+.g-logo-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 3.2rem; font-weight: 600;
+    color: #202124; letter-spacing: -0.5px;
+    line-height: 1;
 }
-.status-pill .dot.err { background: #ef4444; }
-.status-pill strong { color: #0f172a; font-weight: 600; }
-
-/* ── Metric tile ── */
-.metric-tile {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 10px; padding: 1rem 1.2rem;
-    text-align: center; margin-bottom: 1rem;
-}
-.metric-tile .val {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 2rem; font-weight: 700;
-    color: #2563eb; line-height: 1;
-}
-.metric-tile .lbl {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px;
+.g-logo-text span { color: #1a73e8; }
+.g-logo-sub {
+    font-size: 0.82rem; color: #9aa0a6;
+    margin-top: 6px; letter-spacing: 0.01em;
 }
 
-/* ── Example buttons ── */
-.stButton > button {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #64748b !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.7rem !important;
-    padding: 0.4rem 0.8rem !important;
-    width: 100% !important;
-    text-align: left !important;
-    transition: all 0.15s ease !important;
-    margin-bottom: 3px !important;
+/* ── Search box ── */
+.g-search-wrap {
+    position: relative; margin: 0 auto 1rem auto;
 }
-.stButton > button:hover {
-    background: #eff6ff !important;
-    border-color: #2563eb !important;
-    color: #2563eb !important;
-    transform: translateX(2px) !important;
-}
-
-/* ── Slider & select ── */
-.stSlider > div > div > div { background: #2563eb !important; }
-.stSelectbox > div > div {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #0f172a !important;
-    border-radius: 8px !important;
-}
-.stToggle > label { color: #64748b !important; }
-
-/* ── Main header ── */
-.main-header {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-top: 4px solid #2563eb;
-    border-radius: 12px;
-    padding: 2.5rem 3rem;
-    margin-bottom: 2rem;
-    position: relative; overflow: hidden;
-}
-.main-header::before {
-    content: '';
-    position: absolute; top: 0; right: 0;
-    width: 320px; height: 100%;
-    background: linear-gradient(135deg, transparent 40%, #eff6ff 100%);
-    pointer-events: none;
-}
-.header-tag {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem; font-weight: 500;
-    color: #2563eb; letter-spacing: 0.14em;
-    text-transform: uppercase; margin-bottom: 0.75rem;
-    display: flex; align-items: center; gap: 8px;
-}
-.header-tag::before {
-    content: '';
-    display: inline-block; width: 18px; height: 2px; background: #2563eb;
-    border-radius: 1px;
-}
-.header-title {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 2.6rem; font-weight: 700;
-    color: #0f172a; line-height: 1.1; margin-bottom: 0.5rem;
-}
-.header-title span { color: #2563eb; }
-.header-sub {
-    font-size: 0.9rem; color: #64748b;
-    margin-bottom: 1.5rem; line-height: 1.5; max-width: 560px;
-}
-.badge-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.hbadge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem; font-weight: 500;
-    padding: 3px 10px; border-radius: 4px;
-    border: 1px solid #e2e8f0;
-    color: #64748b; background: #f8fafc;
-    letter-spacing: 0.02em;
-}
-
-/* ── Search textarea ── */
 .stTextArea textarea {
     background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
-    color: #0f172a !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
-    font-size: 0.92rem !important;
-    caret-color: #2563eb !important;
-    line-height: 1.6 !important;
+    border: 1px solid #dfe1e5 !important;
+    border-radius: 24px !important;
+    color: #202124 !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 1rem !important;
+    padding: 14px 24px !important;
+    line-height: 1.5 !important;
+    box-shadow: 0 1px 6px rgba(32,33,36,0.1) !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+    resize: none !important;
 }
 .stTextArea textarea:focus {
-    border-color: #2563eb !important;
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
+    border-color: transparent !important;
+    box-shadow: 0 1px 12px rgba(32,33,36,0.2) !important;
+    outline: none !important;
 }
-.stTextArea textarea::placeholder { color: #cbd5e1 !important; }
+.stTextArea textarea::placeholder { color: #9aa0a6 !important; }
+/* Hide textarea label */
+.stTextArea label { display: none !important; }
 
 /* ── Search button ── */
-.search-btn > div > button, .search-btn button {
-    background: #2563eb !important;
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 8px !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
-    font-size: 0.9rem !important;
-    font-weight: 600 !important;
-    padding: 0.7rem 1.5rem !important;
-    width: 100% !important;
-    letter-spacing: 0.01em !important;
-    transition: all 0.15s ease !important;
-    box-shadow: 0 1px 3px rgba(37,99,235,0.3), 0 4px 12px rgba(37,99,235,0.15) !important;
+.g-btn button {
+    background: #f8f9fa !important;
+    color: #3c4043 !important;
+    border: 1px solid #f8f9fa !important;
+    border-radius: 4px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.85rem !important;
+    font-weight: 400 !important;
+    padding: 0.55rem 1.2rem !important;
+    transition: box-shadow 0.1s ease, border-color 0.1s ease !important;
+    white-space: nowrap !important;
 }
-.search-btn > div > button:hover, .search-btn button:hover {
-    background: #1d4ed8 !important;
-    box-shadow: 0 4px 16px rgba(37,99,235,0.35) !important;
-    transform: translateY(-1px) !important;
+.g-btn button:hover {
+    box-shadow: 0 1px 3px rgba(32,33,36,0.2) !important;
+    border-color: #dadce0 !important;
+    color: #202124 !important;
+    background: #f8f9fa !important;
 }
 
-/* ── Section headers ── */
-.section-head {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem; font-weight: 500;
-    color: #94a3b8; letter-spacing: 0.14em;
-    text-transform: uppercase;
-    margin-bottom: 0.9rem;
-    display: flex; align-items: center; gap: 10px;
+/* ── Filter row ── */
+.stSelectbox > div > div {
+    background: #ffffff !important;
+    border: 1px solid #dfe1e5 !important;
+    border-radius: 20px !important;
+    color: #202124 !important;
+    font-size: 0.82rem !important;
 }
-.section-head::after {
-    content: ''; flex: 1; height: 1px; background: #e2e8f0;
+.stToggle > label { color: #5f6368 !important; font-size: 0.85rem !important; }
+.stSlider .stMarkdown { color: #5f6368 !important; font-size: 0.82rem !important; }
+.stSlider > div > div > div { background: #1a73e8 !important; }
+
+/* ── Filter labels ── */
+.filter-label {
+    font-size: 0.78rem; color: #9aa0a6;
+    margin-bottom: 4px; letter-spacing: 0.01em;
+}
+
+/* ── Divider ── */
+.g-divider {
+    height: 1px; background: #ebebeb;
+    margin: 1.5rem 0;
 }
 
 /* ── Result cards ── */
 .rcard {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.6rem;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid #ebebeb;
+    transition: background 0.1s;
 }
-.rcard:hover {
-    border-color: #2563eb;
-    box-shadow: 0 2px 12px rgba(37,99,235,0.08);
-}
-.rcard.repair { border-left: 3px solid #f97316; }
-.rcard.manual { border-left: 3px solid #2563eb; }
+.rcard:last-child { border-bottom: none; }
+.rcard.repair { border-left: none; }
+.rcard.manual { border-left: none; }
 
-.rcard-header {
-    display: flex; justify-content: space-between;
-    align-items: center; margin-bottom: 0.3rem;
-}
 .rcard-source {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.07em;
-    white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; max-width: 75%;
+    font-size: 0.78rem; color: #1a73e8;
+    font-family: 'Inter', sans-serif;
+    margin-bottom: 2px;
+    display: flex; align-items: center; gap: 6px;
+}
+.rcard-source .src-type {
+    font-size: 0.68rem; color: #9aa0a6;
+    background: #f1f3f4; border-radius: 3px;
+    padding: 1px 6px;
 }
 .rcard-score {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem; font-weight: 600;
-    padding: 2px 8px; border-radius: 4px; flex-shrink: 0;
+    font-size: 0.68rem; font-weight: 500;
+    padding: 1px 7px; border-radius: 3px; flex-shrink: 0;
 }
-.score-high { background: #dcfce7; color: #16a34a; }
-.score-mid  { background: #fef9c3; color: #ca8a04; }
-.score-low  { background: #f1f5f9; color: #64748b; }
+.score-high { background: #e6f4ea; color: #137333; }
+.score-mid  { background: #fef7e0; color: #b06000; }
+.score-low  { background: #f1f3f4; color: #5f6368; }
 
 .rcard-title {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 0.9rem; font-weight: 600;
-    color: #0f172a; margin-bottom: 0.3rem; line-height: 1.3;
+    font-size: 1.05rem; font-weight: 500;
+    color: #1a0dab; margin-bottom: 3px; line-height: 1.3;
+    cursor: default;
 }
+.rcard-title:hover { text-decoration: underline; color: #1a0dab; }
 .rcard-body {
-    font-size: 0.78rem; color: #64748b; line-height: 1.55;
+    font-size: 0.85rem; color: #4d5156; line-height: 1.55;
 }
-.rcard-body b { color: #0f172a; font-weight: 600; }
+.rcard-body b { color: #202124; font-weight: 500; }
 
 /* ── AI panel ── */
 .ai-panel {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px; padding: 1.4rem;
+    background: #f8f9fa;
+    border: 1px solid #ebebeb;
+    border-radius: 8px; padding: 1.2rem 1.4rem;
+    margin-top: 1.5rem;
 }
 .ai-panel-header {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 1rem; padding-bottom: 0.75rem;
-    border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 0.8rem; padding-bottom: 0.7rem;
+    border-bottom: 1px solid #ebebeb;
 }
 .ai-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: #10b981;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #34a853;
     animation: pulse 2.5s infinite;
 }
-@keyframes pulse {
-    0%, 100% { opacity: 1; } 50% { opacity: 0.35; }
-}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .ai-model-tag {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem; color: #94a3b8;
+    font-size: 0.65rem; color: #9aa0a6;
 }
-.ai-model-tag span { color: #64748b; font-weight: 500; }
+.ai-model-tag span { color: #5f6368; }
 .ai-body {
-    font-size: 0.85rem; line-height: 1.8;
-    color: #334155; white-space: pre-wrap;
+    font-size: 0.87rem; line-height: 1.75;
+    color: #3c4043; white-space: pre-wrap;
 }
 
-/* ── Download button ── */
+/* ── Section head ── */
+.section-head {
+    font-size: 0.78rem; color: #9aa0a6;
+    letter-spacing: 0.02em; margin-bottom: 0.5rem;
+}
+
+/* ── Download ── */
 .stDownloadButton > button {
     background: transparent !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #64748b !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.68rem !important;
-    padding: 0.4rem 1rem !important;
+    border: 1px solid #dadce0 !important;
+    color: #5f6368 !important;
+    border-radius: 4px !important;
+    font-size: 0.78rem !important;
+    padding: 0.35rem 0.9rem !important;
     margin-top: 0.8rem !important;
     transition: all 0.15s ease !important;
 }
 .stDownloadButton > button:hover {
-    border-color: #2563eb !important;
-    color: #2563eb !important;
-    background: #eff6ff !important;
+    border-color: #1a73e8 !important;
+    color: #1a73e8 !important;
 }
 
-/* ── Misc ── */
-.stSpinner > div { border-top-color: #2563eb !important; }
-.stWarning { background: #fff7ed !important; border-color: #fed7aa !important; }
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #f8fafc; }
-::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+/* ── Spinner ── */
+.stSpinner > div { border-top-color: #1a73e8 !important; }
+.stWarning { background: #fef7e0 !important; border-color: #fdd663 !important; font-size: 0.85rem !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #ffffff; }
+::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -539,96 +426,42 @@ def score_class(s):
     return "score-high" if s >= 0.65 else ("score-mid" if s >= 0.50 else "score-low")
 
 
-# ── Sidebar ─────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("""
-    <div class='sb-logo'>
-        <div class='sb-logo-icon'>⚕️</div>
-        <div>
-            <div class='sb-logo-text'>NIC MedSearch</div>
-            <div class='sb-logo-sub'>Equipment IR System · v2.0</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # System status
-    st.markdown("<div class='sb-section'>System Status</div>", unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class='status-pill'>
-        <div class='dot {"" if qdrant_ok else "err"}'></div>
-        <span><strong>Qdrant Cloud</strong> — {"connected" if qdrant_ok else "error"}</span>
-    </div>
-    <div class='status-pill'>
-        <div class='dot {"" if groq_ok else "err"}'></div>
-        <span><strong>Groq API</strong> — {"ready" if groq_ok else "error"}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Record count
-    try:
-        info  = qdrant.get_collection(COLLECTION_NAME)
-        total = info.points_count
-        st.markdown(f"""
-        <div class='metric-tile'>
-            <div class='val'>{total:,}</div>
-            <div class='lbl'>Records Indexed</div>
-        </div>
-        """, unsafe_allow_html=True)
-    except: pass
-
-    # Search settings
-    st.markdown("<div class='sb-section'>Search Settings</div>", unsafe_allow_html=True)
-    top_k      = st.slider("Results to show", 3, 10, 5)
-    doc_filter = st.selectbox("Filter by source",
-        ["All Sources", "Repair Records Only", "Manuals Only"])
-    enable_ai  = st.toggle("Enable AI Response", value=True)
-
-    # Examples
-    st.markdown("<div class='sb-section'>Example Queries</div>", unsafe_allow_html=True)
-    examples = [
-        "ventilator leak test failed",
-        "ECG machine calibration steps",
-        "defibrillator not charging",
-        "microscope lens not clear",
-        "auxiliary AC outlet no voltage",
-        "monoblock assembly replacement",
-    ]
-    for ex in examples:
-        if st.button(ex, key=ex):
-            st.session_state.query = ex
-
+# ── Sidebar hidden — all controls in main area ──────────────────
+# (sidebar CSS display:none — no sidebar rendered)
 
 # ── Main area ────────────────────────────────────────────────────
+# Logo / wordmark — centered like Google
 st.markdown("""
-<div class='main-header'>
-    <div class='header-tag'>Hospital Equipment Intelligence</div>
-    <div class='header-title'>NIC <span>MedSearch</span></div>
-    <div class='header-sub'>Retrieval-Augmented Generation for medical equipment maintenance & repair</div>
-    <div class='badge-row'>
-        <span class='hbadge'>RAG Pipeline</span>
-        <span class='hbadge'>MiniLM + CrossEncoder</span>
-        <span class='hbadge'>Groq LLM</span>
-        <span class='hbadge'>Qdrant Cloud</span>
-        <span class='hbadge'>5,607 Records</span>
-    </div>
+<div class='g-logo'>
+    <div class='g-logo-text'>NIC <span>Med</span>Search</div>
+    <div class='g-logo-sub'>Hospital Equipment Intelligence & Retrieval</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Search bar
-c1, c2 = st.columns([5, 1])
-with c1:
-    query = st.text_area(
-        "q", label_visibility="collapsed",
-        value=st.session_state.get("query", ""),
-        height=90,
-        placeholder="Describe the fault or procedure — e.g. 'ventilator alarm not stopping after power cycle'"
-    )
-with c2:
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    with st.container():
-        st.markdown("<div class='search-btn'>", unsafe_allow_html=True)
-        search_clicked = st.button("⌕  Search", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+# Search bar — full width, rounded, Google-style
+query = st.text_area(
+    "q", label_visibility="collapsed",
+    value=st.session_state.get("query", ""),
+    height=68,
+    placeholder="Describe the fault, error, or procedure…"
+)
+
+# Controls row — filter + results count + AI toggle + search button
+cc1, cc2, cc3, cc4 = st.columns([2, 1.2, 1.2, 1])
+with cc1:
+    doc_filter = st.selectbox("", ["All Sources", "Repair Records Only", "Manuals Only"],
+                               label_visibility="collapsed")
+with cc2:
+    top_k = st.slider("", 3, 10, 5, label_visibility="collapsed",
+                      help="Number of results to show")
+with cc3:
+    enable_ai = st.toggle("AI Answer", value=True)
+with cc4:
+    st.markdown("<div class='g-btn'>", unsafe_allow_html=True)
+    search_clicked = st.button("Search", use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='g-divider'></div>", unsafe_allow_html=True)
 
 # ── Results ──────────────────────────────────────────────────────
 if search_clicked and query.strip():
@@ -641,13 +474,13 @@ if search_clicked and query.strip():
         with st.spinner("Reranking with cross-encoder …"):
             results = rerank_results(query, candidates, top_n=top_k)
 
-        col_r, col_ai = st.columns([1, 1], gap="large")
-
-        with col_r:
-            st.markdown(
-                f"<div class='section-head'>Top {len(results)} Results&nbsp;&nbsp;after reranking</div>",
-                unsafe_allow_html=True
-            )
+        st.markdown(
+            f"<div class='section-head'>About {len(results)} results</div>",
+            unsafe_allow_html=True
+        )
+        if True:  # results column (single column now)
+            pass
+        if True:
             for r in results:
                 p  = r.payload
                 dt = p.get("doc_type", "repair_record")
@@ -675,52 +508,37 @@ if search_clicked and query.strip():
                 </div>
                 """, unsafe_allow_html=True)
 
-        with col_ai:
-            st.markdown(
-                "<div class='section-head'>AI Recommendation</div>",
-                unsafe_allow_html=True
+        if enable_ai:
+            with st.spinner("Generating response …"):
+                context = build_context(results)
+                answer  = ask_groq(query, context, doc_filter)
+
+            st.markdown(f"""
+            <div class='ai-panel'>
+                <div class='ai-panel-header'>
+                    <div class='ai-dot'></div>
+                    <div class='ai-model-tag'>
+                        <span>{LLM_MODEL}</span> via Groq &nbsp;·&nbsp; MiniLM + CrossEncoder
+                    </div>
+                </div>
+                <div class='ai-body'>{answer}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.download_button(
+                "↓  Download Report",
+                data=f"QUERY: {query}\n\nAI RECOMMENDATION:\n{answer}",
+                file_name="medsearch_report.txt",
+                mime="text/plain",
             )
-            if enable_ai:
-                with st.spinner("Generating response …"):
-                    context = build_context(results)
-                    answer  = ask_groq(query, context, doc_filter)
-
-                st.markdown(f"""
-                <div class='ai-panel'>
-                    <div class='ai-panel-header'>
-                        <div class='ai-dot'></div>
-                        <div class='ai-model-tag'>
-                            <span>{LLM_MODEL}</span> via Groq &nbsp;·&nbsp;
-                            MiniLM + CrossEncoder
-                        </div>
-                    </div>
-                    <div class='ai-body'>{answer}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                st.download_button(
-                    "↓  Download Report",
-                    data=f"QUERY: {query}\n\nAI RECOMMENDATION:\n{answer}",
-                    file_name="medsearch_report.txt",
-                    mime="text/plain",
-                )
-            else:
-                st.markdown("""
-                <div class='ai-panel' style='display:flex;align-items:center;justify-content:center;min-height:200px;'>
-                    <div style='text-align:center;color:#2a4a6a;font-family:JetBrains Mono,monospace;font-size:0.8rem;'>
-                        AI response disabled<br>Toggle in sidebar to enable
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
 
 elif search_clicked:
     st.warning("Please enter a query.")
 
 # Footer
 st.markdown("""
-<div style='margin-top:3rem;padding-top:1.5rem;border-top:1px solid rgba(0,210,200,0.08);
-     text-align:center;font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#1a3050;
-     letter-spacing:0.08em;text-transform:uppercase;'>
-    NIC MedSearch &nbsp;·&nbsp; MiniLM + CrossEncoder &nbsp;·&nbsp; Qdrant Cloud + Groq
+<div style='margin-top:4rem;padding-top:1.5rem;border-top:1px solid #ebebeb;
+     text-align:center;font-size:0.75rem;color:#9aa0a6;'>
+    NIC MedSearch &nbsp;·&nbsp; Qdrant Cloud · Groq · MiniLM
 </div>
 """, unsafe_allow_html=True)
