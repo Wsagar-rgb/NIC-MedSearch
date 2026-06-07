@@ -18,7 +18,8 @@ INGEST_LOG        = INGESTED_DIR  / "ingest_log.txt"
 MANUAL_JSONL      = PROCESSED_DIR / "manuals.jsonl"
 
 # ── Qdrant / RAG ──────────────────────────────────────────────
-QDRANT_URL      = "http://localhost:6333"
+QDRANT_URL      = "https://7e85c634-c6ea-486d-a3d7-abdcc76337cc.sa-east-1-0.aws.cloud.qdrant.io"
+QDRANT_API_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6YjE5MWU1ZWMtMmE5My00Y2RkLTgxMjQtNDUyYTVhZTRmN2E2In0.rTxPAJhTJGtj3tb6bpJnoDh01KZG9NpLgsmfx1GFzXU"
 COLLECTION_NAME = "nic_medsearch"
 
 # UPDATED: BGE model — faster and more accurate than all-mpnet-base-v2

@@ -18,7 +18,7 @@ from PIL import Image
 import io
 
 from config import (
-    COLLECTION_NAME, QDRANT_URL,
+    COLLECTION_NAME, QDRANT_URL, QDRANT_API_KEY,
     LLM_MODEL, TOP_K, PROCESSED_DIR
 )
 
@@ -111,7 +111,7 @@ if "embedder" not in st.session_state:
     with st.spinner("Loading models …"):
         st.session_state.embedder = SentenceTransformer(EMBEDDING_MODEL)
         st.session_state.reranker = CrossEncoder(RERANKER_MODEL)
-        st.session_state.client = QdrantClient(url=QDRANT_URL)
+       st.session_state.client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
 embedder = st.session_state.embedder
 reranker = st.session_state.reranker
