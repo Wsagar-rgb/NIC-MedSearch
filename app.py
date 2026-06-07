@@ -13,7 +13,6 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchText
-import ollama
 from PIL import Image
 import io
 
@@ -278,7 +277,9 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
 
 
 def ask_llm(query: str, context: str, doc_filter: str = "All Sources") -> str:
-    """Generate answer using Ollama."""
+    """Generate answer using Groq API."""
+    from groq import Groq
+    
     spec_keywords   = ["specification", "spec", "technical", "requirement",
                        "voltage", "power", "weight", "dimension"]
     manual_keywords = ["manual", "service", "procedure", "how to", "steps",
@@ -327,11 +328,17 @@ Provide:
 4. Parts or tools needed
 5. Urgency: CRITICAL / HIGH / MEDIUM / LOW"""
 
-    response = ollama.chat(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}]
+    # Initialize Groq client (uses GROQ_API_KEY from environment)
+    client = Groq()
+    
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1024,
+        temperature=0.7
     )
-    return response["message"]["content"]
+    
+    return response.choices[0].message.content
 
 
 # ── Main UI ───────────────────────────────────────────────────
