@@ -355,7 +355,6 @@ with st.sidebar:
         index=0,
     )
     top_k = st.slider("Results to show:", min_value=3, max_value=10, value=TOP_K)
-    show_images = st.checkbox("Display retrieved images", value=True)
 
 # ── Query Input ───────────────────────────────────────────────
 query = st.text_area(
@@ -392,18 +391,18 @@ if st.button("🔍 Search & Analyze", type="primary", use_container_width=True):
                 for i, r in enumerate(tables):
                     p = r.payload
                     with st.container(border=True):
-                        col1, col2 = st.columns([3, 1]
-                        )
+                        col1, col2 = st.columns([3, 1])
                         with col1:
                             st.markdown(f"**{p.get('title', 'Table')}**")
                             st.markdown(f"📄 {p.get('source_file', 'N/A')} | Page {p.get('page_num', '?')}")
-                            st.write(p.get("content", "N/A"))
                         with col2:
                             st.metric("Score", f"{r.score:.1%}")
                         
-                        if show_images and p.get("image_path"):
-                            st.markdown("**Original Table Image:**")
+                        # Display ONLY the image, no text description
+                        if p.get("image_path"):
                             load_and_display_image(p.get("image_path"))
+                        else:
+                            st.info("No image available for this table")
             
             # ── Retrieved Images ──────────────────────────────
             if images:
@@ -415,13 +414,14 @@ if st.button("🔍 Search & Analyze", type="primary", use_container_width=True):
                         with col1:
                             st.markdown(f"**{p.get('title', 'Image')}**")
                             st.markdown(f"📄 {p.get('source_file', 'N/A')} | Page {p.get('page_num', '?')}")
-                            st.write(p.get("content", "N/A"))
                         with col2:
                             st.metric("Score", f"{r.score:.1%}")
                         
-                        if show_images and p.get("image_path"):
-                            st.markdown("**Original Image:**")
+                        # Display ONLY the image, no text description
+                        if p.get("image_path"):
                             load_and_display_image(p.get("image_path"))
+                        else:
+                            st.info("No image available for this diagram")
             
             # ── Retrieved Manual Sections ─────────────────────
             if manuals:
