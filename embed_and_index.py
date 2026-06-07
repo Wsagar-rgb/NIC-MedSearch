@@ -1,12 +1,10 @@
 # ─────────────────────────────────────────────────────────────
-# embed_and_index.py — Embed cleaned records & index in Qdrant
-# OPTIMIZED:
-#   - BGE model (faster + more accurate than mpnet)
-#   - Embedding cache (skip re-encoding unchanged records)
-#   - MiniLM-L6-v2 model (5x faster than BGE/mpnet on CPU)
-#   - Larger upload batches (fewer HTTP round-trips)
-#   - Fixed build_embed_text (no redundant field duplication)
-# Usage: python embed_and_index.py
+# embed_and_index_enhanced.py — Index Text + Tables + Images
+# Extended to handle:
+#   - table_description (LLM-summarized table content)
+#   - image_description (Vision-described image content)
+#   - image_path payloads for retrieval & display
+# Usage: python embed_and_index_enhanced.py
 # ─────────────────────────────────────────────────────────────
 
 import json
@@ -31,48 +29,28 @@ log = logging.getLogger(__name__)
 # ── Constants ─────────────────────────────────────────────────
 QDRANT_CLOUD_URL = "https://7e85c634-c6ea-486d-a3d7-abdcc76337cc.sa-east-1-0.aws.cloud.qdrant.io"
 QDRANT_CLOUD_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6YjE5MWU1ZWMtMmE5My00Y2RkLTgxMjQtNDUyYTVhZTRmN2E2In0.rTxPAJhTJGtj3tb6bpJnoDh01KZG9NpLgsmfx1GFzXU"
-
-# ── SPEED MODEL: all-MiniLM-L6-v2
-#    - 5x faster than BGE/mpnet on CPU (22M params vs 110M)
-#    - 384-dim vectors (half the size → faster upload + search)
-#    - ~2% accuracy drop vs BGE, fully offset by the cross-encoder reranker
-#    - Best choice when embedding speed matters and reranker is enabled
-#    - NOTE: if you previously indexed with BGE (768-dim), you MUST delete
-#      the Qdrant collection and embeddings cache before re-indexing,
-#      because the vector dimensions are different.
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-
-# Encoding batch — larger = better CPU/GPU utilisation
 ENCODE_BATCH_SIZE = 256
-
-# Upload batch — larger = fewer HTTP round-trips to Qdrant Cloud
 UPLOAD_BATCH_SIZE = 512
-
-# Cache file — stores embeddings so unchanged records are never re-encoded
 CACHE_FILE = PROCESSED_DIR / "embeddings_cache.npz"
 
 
-# ── Build embedding text ──────────────────────────────────────
-# FIX: previous version duplicated fields because `content` already
-# contains equipment_name, fault_description etc (built in utils.py).
-# Now we use `content` directly for repair records, and title+content
-# for manual sections — no redundancy, cleaner signal for the model.
-
 def build_embed_text(rec: dict) -> str:
+    """
+    Build embedding text based on doc_type.
+    Tables and images are treated like manual sections for embedding.
+    """
     doc_type = rec.get("doc_type", "repair_record")
-    if doc_type in ("manual_section", "manual_sub_section"):
-        title   = (rec.get("title")   or "").strip()
+    
+    if doc_type in ("manual_section", "manual_sub_section", "table_description", "image_description"):
+        title   = (rec.get("title") or "").strip()
         content = (rec.get("content") or "").strip()
-        # Prepend title twice so it gets higher weight in the embedding
+        # Title weighted twice for importance
         return f"{title}. {title}. {content}".strip()
     else:
-        # repair_record: content already has all fields concatenated
+        # repair_record
         return (rec.get("content") or "").strip()
 
-
-# ── Embedding cache ───────────────────────────────────────────
-# Hash all record contents. If the hash matches the cached hash,
-# load stored embeddings instead of re-encoding.
 
 def compute_corpus_hash(texts: list[str]) -> str:
     combined = "\n".join(texts)
@@ -96,35 +74,22 @@ def load_or_encode(texts: list[str], model: SentenceTransformer) -> np.ndarray:
     else:
         log.info("No cache found — encoding from scratch")
 
-    # MiniLM does not use any query prefix — encode documents as-is
-
     log.info(f"Encoding {len(texts)} records (batch={ENCODE_BATCH_SIZE}) …")
     embeddings = model.encode(
         texts,
         batch_size=ENCODE_BATCH_SIZE,
         show_progress_bar=True,
         convert_to_numpy=True,
-        normalize_embeddings=True,   # pre-normalise → cosine = dot product
-        # num_workers removed — not supported in sentence-transformers >= 3.x
+        normalize_embeddings=True,
     )
 
-    # Save cache
     log.info(f"Saving embedding cache → {CACHE_FILE}")
     np.savez(CACHE_FILE, embeddings=embeddings, hash=corpus_hash)
     log.info("Cache saved.")
     return embeddings
 
 
-# ── Incremental indexing ──────────────────────────────────────
-# Only re-encode and re-upload records whose content_hash changed.
-# On first run this is all records; on subsequent runs it is only
-# new or modified records — major speed improvement for large datasets.
-
 def load_indexed_hashes(client: QdrantClient) -> set:
-    """
-    Scroll through Qdrant and collect all content_hash values already indexed.
-    Returns a set of hashes so we can skip unchanged records.
-    """
     indexed = set()
     offset  = None
     log.info("Scanning Qdrant for already-indexed record hashes …")
@@ -161,9 +126,6 @@ client = QdrantClient(
 )
 
 # ── Create or recreate collection ────────────────────────────
-# Checks if the existing collection has the correct vector dimension.
-# If dimension mismatches (e.g. switched from BGE 768-dim to MiniLM 384-dim),
-# the old collection is deleted and recreated automatically.
 existing_collections = [c.name for c in client.get_collections().collections]
 
 needs_recreate = False
@@ -189,7 +151,6 @@ if needs_recreate:
         vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
     )
 
-    # ── Payload indexes (only on fresh collection) ────────────
     log.info("Creating payload indexes …")
     client.create_payload_index(
         collection_name=COLLECTION_NAME,
@@ -210,14 +171,14 @@ if needs_recreate:
         )
     log.info("Payload indexes created.")
 
-# ── Load existing hashes to skip unchanged records ────────────
+# ── Load existing hashes ──────────────────────────────────────
 indexed_hashes = load_indexed_hashes(client)
 
-# ── Load records — Repair records + Manuals ───────────────────
+# ── Load records ──────────────────────────────────────────────
 all_records = []
 sources = [
     (REPAIR_JSONL, "Repair records"),
-    (MANUAL_JSONL, "Manuals"),
+    (MANUAL_JSONL, "Manuals + Tables + Images"),
 ]
 
 for jsonl_path, label in sources:
@@ -235,7 +196,7 @@ for jsonl_path, label in sources:
 
 log.info(f"Total records loaded: {len(all_records)}")
 
-# ── Filter to only new / changed records ─────────────────────
+# ── Filter to new/changed records ────────────────────────────
 new_records = [
     r for r in all_records
     if r.get("content_hash") not in indexed_hashes
@@ -249,14 +210,10 @@ else:
     # ── Build embedding texts ─────────────────────────────────
     all_texts = [build_embed_text(r) for r in new_records]
 
-    # ── Encode (with cache) ───────────────────────────────────
-    # Cache is keyed on the full new_records corpus.
-    # If you add records incrementally, the hash changes and
-    # only the new batch is encoded (cache miss on new_records subset).
+    # ── Encode ────────────────────────────────────────────────
     all_embeddings = load_or_encode(all_texts, model)
 
     # ── Upload to Qdrant ──────────────────────────────────────
-    # Use a global point ID offset to avoid collisions with existing points.
     collection_info = client.get_collection(COLLECTION_NAME)
     id_offset       = collection_info.points_count or 0
     total_uploaded  = 0
@@ -285,6 +242,10 @@ else:
                     "action_taken"     : rec.get("action_taken"),
                     "title"            : rec.get("title"),
                     "content"          : rec.get("content"),
+                    # ── NEW: Image paths for display ────────────
+                    "image_path"       : rec.get("image_path"),
+                    "image_size"       : rec.get("image_size"),
+                    "page_num"         : rec.get("page_num"),
                 },
             )
             for j, (rec, vec) in enumerate(zip(batch, embeddings))
@@ -299,6 +260,18 @@ else:
     log.info(f"  Model      : {EMBEDDING_MODEL}  ({VECTOR_SIZE}-dim, normalised)")
     log.info(f"  Collection : {COLLECTION_NAME}")
     log.info(f"  Qdrant URL : {QDRANT_CLOUD_URL}")
+    
+    # ── Summary breakdown ─────────────────────────────────────
+    text_count = sum(1 for r in all_records if r.get("doc_type") == "manual_section")
+    table_count = sum(1 for r in all_records if r.get("doc_type") == "table_description")
+    image_count = sum(1 for r in all_records if r.get("doc_type") == "image_description")
+    repair_count = sum(1 for r in all_records if r.get("doc_type") == "repair_record")
+    
+    log.info(f"\n  Record breakdown:")
+    log.info(f"    Text sections  : {text_count}")
+    log.info(f"    Tables         : {table_count}")
+    log.info(f"    Images         : {image_count}")
+    log.info(f"    Repair records : {repair_count}")
     log.info("─" * 50)
 
-log.info("\nNext step: run python query.py or streamlit run app.py")
+log.info("\nNext step: run python query_enhanced.py or streamlit run app_enhanced.py")
