@@ -26,6 +26,7 @@ qdrant-client>=1.9.0
 
 # LLM API
 groq>=0.9.0
+ollama 
 
 # UI
 streamlit>=1.35.0
