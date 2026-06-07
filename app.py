@@ -111,11 +111,8 @@ if "embedder" not in st.session_state:
     with st.spinner("Loading models …"):
         st.session_state.embedder = SentenceTransformer(EMBEDDING_MODEL)
         st.session_state.reranker = CrossEncoder(RERANKER_MODEL)
-       st.session_state.client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-
-embedder = st.session_state.embedder
-reranker = st.session_state.reranker
-client = st.session_state.client
+        st.session_state.client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        ↑ NOW ALIGNED CORRECTLY
 
 
 # ── Helper functions ──────────────────────────────────────────
