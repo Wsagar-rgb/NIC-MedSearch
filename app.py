@@ -1,20 +1,23 @@
 # ─────────────────────────────────────────────────────────────
-# app_enhanced.py — NIC MedSearch Streamlit UI with Images
-# Enhanced to:
-#   - Display retrieved tables and images inline
-#   - Show doc_type with icons
-#   - Load and display extracted images from disk
-# Usage: streamlit run app_enhanced.py
+# app.py — NIC MedSearch (Mistri) | Google-style Streamlit UI
+#   - Centered four-color "Mistri" wordmark
+#   - Single rounded search bar with filter "tabs"
+#   - Google-style result links + "AI Overview" card
+#   - Inline display of retrieved tables and images
+# Backend (Qdrant search, alias filtering, rerank, Groq) unchanged.
+# Usage: streamlit run app.py
 # ─────────────────────────────────────────────────────────────
 
-import streamlit as st
+import io
+import html
 import logging
 from pathlib import Path
+
+import streamlit as st
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchText
 from PIL import Image
-import io
 
 from config import (
     COLLECTION_NAME, QDRANT_URL, QDRANT_API_KEY,
@@ -26,66 +29,97 @@ log = logging.getLogger(__name__)
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
-    page_title="NIC MedSearch",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Mistri — NIC MedSearch",
+    page_icon="🩺",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────
+# ── Google-style CSS ──────────────────────────────────────────
 st.markdown("""
 <style>
-    .main-title {
-        font-size: 2.5em;
-        font-weight: bold;
-        color: #1f77b4;
-        margin-bottom: 0.5em;
+    /* Hide Streamlit chrome for a clean Google-like canvas */
+    #MainMenu, header, footer {visibility: hidden;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap');
+
+    html, body, [class*="css"] { font-family: Roboto, arial, sans-serif; }
+    .stApp { background: #ffffff; }
+    .block-container { padding-top: 2rem; max-width: 680px; }
+
+    /* ── Wordmark ── */
+    .mistri-logo {
+        text-align: center;
+        font-family: arial, sans-serif;
+        font-weight: 500;
+        letter-spacing: -3px;
+        line-height: 1;
     }
-    .subtitle {
-        font-size: 1.1em;
-        color: #555;
-        margin-bottom: 1em;
+    .mistri-logo.big   { font-size: 84px;  margin-top: 9vh; }
+    .mistri-logo.small { font-size: 36px;  margin-top: 4px; }
+    .c-blue   { color: #4285F4; }
+    .c-red    { color: #EA4335; }
+    .c-yellow { color: #FBBC05; }
+    .c-green  { color: #34A853; }
+
+    .mistri-sub        { text-align: center; color: #5f6368; }
+    .mistri-sub.big    { font-size: 15px; margin: 14px 0 30px; }
+    .mistri-sub.small  { font-size: 12px; margin: 6px 0 16px; }
+
+    /* ── Search input → rounded Google bar ── */
+    [data-testid="stTextInput"] input {
+        border-radius: 24px;
+        border: 1px solid #dfe1e5;
+        padding: 13px 22px;
+        font-size: 16px;
+        box-shadow: none;
     }
-    .result-card {
-        border-left: 4px solid #1f77b4;
-        padding: 1em;
-        margin: 0.5em 0;
-        background-color: #f9f9f9;
+    [data-testid="stTextInput"] input:hover,
+    [data-testid="stTextInput"] input:focus {
+        box-shadow: 0 1px 6px rgba(32,33,36,.28);
+        border-color: rgba(223,225,229,0);
+    }
+
+    /* ── Buttons → Google grey ── */
+    .stButton button, [data-testid="stFormSubmitButton"] button {
+        background: #f8f9fa;
+        border: 1px solid #f8f9fa;
         border-radius: 4px;
+        color: #3c4043;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 9px 20px;
     }
-    .table-card {
-        border-left: 4px solid #ff7f0e;
+    .stButton button:hover, [data-testid="stFormSubmitButton"] button:hover {
+        box-shadow: 0 1px 1px rgba(0,0,0,.1);
+        border: 1px solid #dadce0;
+        background: #f8f9fa;
+        color: #202124;
     }
-    .image-card {
-        border-left: 4px solid #2ca02c;
+
+    /* ── Filter radio → tab/pill row ── */
+    [data-testid="stRadio"] > div { justify-content: center; gap: 8px; }
+    [data-testid="stRadio"] label {
+        background: #fff;
+        border: 1px solid #dfe1e5;
+        border-radius: 16px;
+        padding: 4px 14px;
+        font-size: 13px;
+        color: #5f6368;
     }
-    .repair-card {
-        border-left: 4px solid #d62728;
-    }
-    .manual-card {
-        border-left: 4px solid #9467bd;
-    }
-    .score-badge {
-        display: inline-block;
-        background-color: #1f77b4;
-        color: white;
-        padding: 0.25em 0.5em;
-        border-radius: 3px;
-        font-weight: bold;
-        font-size: 0.9em;
-    }
-    .doc-type-badge {
-        display: inline-block;
-        margin-left: 0.5em;
-        padding: 0.25em 0.5em;
-        border-radius: 3px;
-        font-weight: bold;
-        font-size: 0.85em;
-    }
-    .table-badge { background-color: #ffc107; color: black; }
-    .image-badge { background-color: #17a2b8; color: white; }
-    .repair-badge { background-color: #dc3545; color: white; }
-    .manual-badge { background-color: #6f42c1; color: white; }
+
+    /* ── Result entries ── */
+    .g-result   { margin: 0 0 26px 0; }
+    .g-source   { color: #202124; font-size: 13px; }
+    .g-meta     { color: #70757a; font-size: 12px; }
+    .g-title    { color: #1a0dab; font-size: 20px; line-height: 1.3; margin: 2px 0 3px; }
+    .g-snippet  { color: #4d5156; font-size: 14px; line-height: 1.58; }
+    .g-count    { color: #70757a; font-size: 13px; margin: 6px 0 20px; }
+    .ai-label   { color: #1a73e8; font-size: 13px; font-weight: 500; margin: 4px 0 6px; }
+
+    .mistri-footer { text-align: center; color: #9aa0a6; font-size: 12px; margin-top: 36px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,8 +150,16 @@ embedder = st.session_state.embedder
 reranker = st.session_state.reranker
 client = st.session_state.client
 
+# UI state
+st.session_state.setdefault("has_searched", False)
+st.session_state.setdefault("last_query", "")
+st.session_state.setdefault("doc_filter", "All Sources")
+st.session_state.setdefault("top_k", TOP_K)
+st.session_state.setdefault("results", None)
+st.session_state.setdefault("answer", None)
 
-# ── Helper functions ──────────────────────────────────────────
+
+# ── Helper functions (unchanged) ──────────────────────────────
 
 def detect_equipment_hint(query: str) -> list[str] | None:
     q_lower = query.lower()
@@ -151,7 +193,7 @@ def search_similar(query: str, fetch_k: int = FETCH_K) -> list:
 
         if results:
             return results, True  # Has filter
-        
+
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
@@ -193,15 +235,6 @@ def get_doc_type_icon(doc_type: str) -> str:
     return icons.get(doc_type, "📄")
 
 
-def get_doc_type_badge_class(doc_type: str) -> str:
-    classes = {
-        "table_description": "table-badge",
-        "image_description": "image-badge",
-        "repair_record": "repair-badge",
-    }
-    return classes.get(doc_type, "manual-badge")
-
-
 def load_and_display_image(image_path: str):
     """Load and display image from processed directory."""
     full_path = PROCESSED_DIR / image_path
@@ -220,7 +253,7 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
     """Build context string and collect image references."""
     parts = []
     image_refs = []
-    
+
     for i, r in enumerate(results):
         p = r.payload
         doc_type = p.get("doc_type", "repair_record")
@@ -240,7 +273,7 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
                     "title": p.get("title", "Table"),
                     "source": p.get("source_file", ""),
                 })
-        
+
         elif doc_type == "image_description":
             parts.append(
                 f"Image {i+1} (Score: {r.score:.2%}):\n"
@@ -256,7 +289,7 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
                     "title": p.get("title", "Image"),
                     "source": p.get("source_file", ""),
                 })
-        
+
         elif doc_type in ("manual_section", "manual_sub_section"):
             parts.append(
                 f"Manual Section {i+1} (Score: {r.score:.2%}):\n"
@@ -264,7 +297,7 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
                 f"  Title   : {p.get('title', 'N/A')}\n"
                 f"  Content : {p.get('content', 'N/A')}\n"
             )
-        
+
         else:  # repair_record, specs, etc.
             parts.append(
                 f"Record {i+1} (Score: {r.score:.2%}, Type: {doc_type}):\n"
@@ -272,14 +305,14 @@ def build_context_and_refs(results: list) -> tuple[str, list]:
                 f"  Problem     : {p.get('fault_description', 'N/A')}\n"
                 f"  Work Done   : {p.get('action_taken', 'N/A')}\n"
             )
-    
+
     return "\n".join(parts), image_refs
 
 
 def ask_llm(query: str, context: str, doc_filter: str = "All Sources") -> str:
     """Generate answer using Groq API."""
     from groq import Groq
-    
+
     spec_keywords   = ["specification", "spec", "technical", "requirement",
                        "voltage", "power", "weight", "dimension"]
     manual_keywords = ["manual", "service", "procedure", "how to", "steps",
@@ -330,142 +363,160 @@ Provide:
 
     # Initialize Groq client (uses GROQ_API_KEY from environment)
     client = Groq()
-    
+
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1024,
         temperature=0.7
     )
-    
+
     return response.choices[0].message.content
+
+
+# ── UI rendering helpers ──────────────────────────────────────
+
+def render_header(compact: bool):
+    size = "small" if compact else "big"
+    logo = (
+        f'<div class="mistri-logo {size}">'
+        '<span class="c-blue">M</span><span class="c-red">i</span>'
+        '<span class="c-yellow">s</span><span class="c-blue">t</span>'
+        '<span class="c-green">r</span><span class="c-red">i</span>'
+        '</div>'
+        f'<div class="mistri-sub {size}">RAG Model for Biomedical Engineers</div>'
+    )
+    st.markdown(logo, unsafe_allow_html=True)
+
+
+def render_result(r):
+    """Render a single retrieved record as a Google-style result entry."""
+    p = r.payload
+    doc_type = p.get("doc_type", "repair_record")
+    score_pct = f"{r.score:.0%}"
+    is_visual = doc_type in ("table_description", "image_description")
+
+    source = p.get("source_file", "")
+    page = p.get("page_num")
+    crumb = source or p.get("hospital", "Source")
+    if page:
+        crumb += f" › Page {page}"
+
+    snippet_html = None
+    if doc_type == "repair_record":
+        equip = p.get("equipment_name", "Equipment")
+        mfr = p.get("manufacturer", "")
+        title = f"{equip} — {mfr}".strip(" —")
+        crumb = p.get("hospital", "Repair record")
+        problem = html.escape((p.get("fault_description", "N/A") or "N/A"))
+        work = html.escape((p.get("action_taken", "N/A") or "N/A")[:280])
+        snippet_html = f"<b>Problem:</b> {problem}<br><b>Work done:</b> {work}"
+    elif doc_type in ("manual_section", "manual_sub_section"):
+        title = p.get("title", "Manual section")
+        content = (p.get("content", "") or "")[:300].strip()
+        snippet_html = (html.escape(content) + "…") if content else None
+    elif is_visual:
+        default = "Diagram" if doc_type == "image_description" else "Table"
+        title = p.get("title", default)
+    else:
+        title = p.get("title", p.get("equipment_name", "Result"))
+        content = (p.get("content", "") or "")[:300].strip()
+        snippet_html = html.escape(content) if content else None
+
+    block = (
+        f'<div class="g-result">'
+        f'<div class="g-source">{html.escape(crumb)} '
+        f'<span class="g-meta">· {score_pct} match</span></div>'
+        f'<div class="g-title">{html.escape(title)}</div>'
+    )
+    if snippet_html:
+        block += f'<div class="g-snippet">{snippet_html}</div>'
+    block += '</div>'
+    st.markdown(block, unsafe_allow_html=True)
+
+    if is_visual and p.get("image_path"):
+        load_and_display_image(p.get("image_path"))
+
+
+def render_results(results, answer):
+    if not results:
+        st.markdown(
+            '<div class="g-count">No relevant records found. Try rephrasing the problem.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.markdown(
+        f'<div class="g-count">About {len(results)} result(s)</div>',
+        unsafe_allow_html=True,
+    )
+
+    if answer:
+        st.markdown('<div class="ai-label">✨ AI Overview</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(answer)
+        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+
+    for r in results:
+        render_result(r)
 
 
 # ── Main UI ───────────────────────────────────────────────────
 
-st.markdown('<p class="main-title">🏥 NIC MedSearch</p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">AI-Powered Medical Equipment Retrieval System</p>', unsafe_allow_html=True)
+render_header(compact=st.session_state.has_searched)
 
-# ── Sidebar ───────────────────────────────────────────────────
-with st.sidebar:
-    st.header("⚙️ Settings")
-    doc_filter = st.radio(
-        "Document Filter:",
-        options=["All Sources", "Manuals Only", "Repair Records Only"],
-        index=0,
+FILTERS = ["All Sources", "Manuals Only", "Repair Records Only"]
+
+with st.form("search_form", clear_on_submit=False):
+    query = st.text_input(
+        "Search query",
+        value=st.session_state.last_query,
+        placeholder="Describe the equipment problem or question…",
+        label_visibility="collapsed",
     )
-    top_k = st.slider("Results to show:", min_value=3, max_value=10, value=TOP_K)
+    doc_filter = st.radio(
+        "Source filter",
+        options=FILTERS,
+        index=FILTERS.index(st.session_state.doc_filter),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    with st.expander("⚙ Tools"):
+        top_k = st.slider("Results to show", 3, 10, st.session_state.top_k)
 
-# ── Query Input ───────────────────────────────────────────────
-query = st.text_area(
-    "🏥 Describe the equipment problem or question:",
-    placeholder="E.g., 'How to calibrate a Mindray monitor?' or 'Equipment not powering on'",
-    height=80,
-)
+    submitted = st.form_submit_button("Mistri Search", use_container_width=True)
 
-if st.button("🔍 Search & Analyze", type="primary", use_container_width=True):
+if submitted:
     if not query.strip():
         st.warning("Please describe a problem or question.")
     else:
-        with st.spinner("Searching database …"):
+        st.session_state.last_query = query
+        st.session_state.doc_filter = doc_filter
+        st.session_state.top_k = top_k
+        st.session_state.has_searched = True
+
+        with st.spinner("Searching …"):
             candidates, has_filter = search_similar(query, fetch_k=FETCH_K)
-        
+
         if not candidates:
-            st.error("No relevant records found in the database.")
+            st.session_state.results = []
+            st.session_state.answer = None
         else:
             with st.spinner(f"Reranking {len(candidates)} candidates …"):
                 results = rerank_results(query, candidates, top_n=top_k)
-            
-            # ── Display Results ───────────────────────────────
-            st.success(f"✓ Found {len(results)} relevant result(s)")
-            
-            # Separate results by type
-            tables = [r for r in results if r.payload.get("doc_type") == "table_description"]
-            images = [r for r in results if r.payload.get("doc_type") == "image_description"]
-            manuals = [r for r in results if r.payload.get("doc_type") in ("manual_section", "manual_sub_section")]
-            repairs = [r for r in results if r.payload.get("doc_type") == "repair_record"]
-            
-            # ── Retrieved Tables ──────────────────────────────
-            if tables:
-                st.subheader("📊 Retrieved Tables")
-                for i, r in enumerate(tables):
-                    p = r.payload
-                    with st.container(border=True):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{p.get('title', 'Table')}**")
-                            st.markdown(f"📄 {p.get('source_file', 'N/A')} | Page {p.get('page_num', '?')}")
-                        with col2:
-                            st.metric("Score", f"{r.score:.1%}")
-                        
-                        # Display ONLY the image, no text description
-                        if p.get("image_path"):
-                            load_and_display_image(p.get("image_path"))
-                        else:
-                            st.info("No image available for this table")
-            
-            # ── Retrieved Images ──────────────────────────────
-            if images:
-                st.subheader("📸 Retrieved Images/Diagrams")
-                for i, r in enumerate(images):
-                    p = r.payload
-                    with st.container(border=True):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{p.get('title', 'Image')}**")
-                            st.markdown(f"📄 {p.get('source_file', 'N/A')} | Page {p.get('page_num', '?')}")
-                        with col2:
-                            st.metric("Score", f"{r.score:.1%}")
-                        
-                        # Display ONLY the image, no text description
-                        if p.get("image_path"):
-                            load_and_display_image(p.get("image_path"))
-                        else:
-                            st.info("No image available for this diagram")
-            
-            # ── Retrieved Manual Sections ─────────────────────
-            if manuals:
-                st.subheader("📘 Manual Sections")
-                for r in manuals:
-                    p = r.payload
-                    with st.container(border=True):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{p.get('title', 'Section')}**")
-                            st.markdown(f"📄 {p.get('source_file', 'N/A')}")
-                            st.write(p.get("content", "N/A")[:500] + "…")
-                        with col2:
-                            st.metric("Score", f"{r.score:.1%}")
-            
-            # ── Retrieved Repair Records ──────────────────────
-            if repairs:
-                st.subheader("🔧 Past Repair Records")
-                for r in repairs:
-                    p = r.payload
-                    with st.container(border=True):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{p.get('equipment_name', 'Equipment')}** ({p.get('manufacturer', 'N/A')})")
-                            st.markdown(f"🏥 {p.get('hospital', 'N/A')}")
-                            st.write(f"**Problem:** {p.get('fault_description', 'N/A')}")
-                            st.write(f"**Work Done:** {p.get('action_taken', 'N/A')[:300]}")
-                        with col2:
-                            st.metric("Score", f"{r.score:.1%}")
-            
-            # ── AI Recommendation ────────────────────────────
-            st.markdown("---")
-            st.subheader("🤖 AI Recommendation")
-            
-            with st.spinner("Generating recommendation …"):
-                context, image_refs = build_context_and_refs(results)
+            with st.spinner("Generating AI overview …"):
+                context, _ = build_context_and_refs(results)
                 answer = ask_llm(query, context, doc_filter=doc_filter)
-            
-            st.info(answer)
+            st.session_state.results = results
+            st.session_state.answer = answer
 
-st.markdown("---")
+        st.rerun()
+
+if st.session_state.has_searched:
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    render_results(st.session_state.results, st.session_state.answer)
+
 st.markdown(
-    "<p style='text-align: center; color: #666; font-size: 0.85em;'>"
-    "NIC MedSearch v2.0 | Enhanced with Table & Image Extraction | Powered by Qdrant + Groq Vision"
-    "</p>",
+    '<div class="mistri-footer">Mistri · NIC MedSearch · Powered by Qdrant + Groq</div>',
     unsafe_allow_html=True,
 )
