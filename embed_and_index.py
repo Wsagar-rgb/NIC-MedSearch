@@ -154,12 +154,12 @@ if needs_recreate:
     log.info("Creating payload indexes …")
     client.create_payload_index(
         collection_name=COLLECTION_NAME,
-        field_name="content",
+        field_name="source_file",
         field_schema=TextIndexParams(
-            type="text",
+            type=models.TextIndexType.TEXT,
             tokenizer=TokenizerType.WORD,
             min_token_len=2,
-            max_token_len=20,
+            max_token_len=30,
             lowercase=True,
         ),
     )

@@ -17,6 +17,7 @@ import streamlit as st
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchText
+from qdrant_client.http.exceptions import UnexpectedResponse
 from PIL import Image
 
 from config import (
@@ -182,17 +183,22 @@ def search_similar(query: str, fetch_k: int = FETCH_K) -> list:
             FieldCondition(key="source_file", match=MatchText(text=frag))
             for frag in equipment_fragments
         ]
-        results = client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            query_filter=Filter(should=should_conditions),
-            limit=fetch_k,
-            with_payload=True,
-            score_threshold=SCORE_THRESHOLD,
-        ).points
+        try:
+            results = client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector,
+                query_filter=Filter(should=should_conditions),
+                limit=fetch_k,
+                with_payload=True,
+                score_threshold=SCORE_THRESHOLD,
+            ).points
 
-        if results:
-            return results, True  # Has filter
+            if results:
+                return results, True  # Has filter
+        except UnexpectedResponse as e:
+            # Most likely a missing text index on "source_file".
+            # Degrade gracefully to plain vector search instead of crashing.
+            log.warning("Filtered search failed, falling back to vector search: %s", e)
 
     results = client.query_points(
         collection_name=COLLECTION_NAME,
